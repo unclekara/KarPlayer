@@ -1,0 +1,24 @@
+# Build & native artifacts
+**/build/
+**/.cxx/
+.gradle/
+.externalNativeBuild/
+
+# Gradle wrapper jar is shipped; only ignore caches.
+# (gradle/wrapper/gradle-wrapper.jar is committed)
+
+# IDE
+*.iml
+/.idea/
+.DS_Store
+/captures/
+
+# Claude Code workspace settings
+/.claude/
+
+# Per-machine paths
+local.properties
+
+# Logcat / debugging dumps occasionally written here
+/logcat_live.txt
+/logcat_dump.txt

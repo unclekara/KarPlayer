@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Retro CRT television with rabbit-ear antennae and SMPTE-style colour bars
+  on the screen. Adaptive icon foreground is 108×108 dp; safe zone is the
+  central 72×72. All elements live inside ~ y=24..92, x=20..88.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ===================== Antennae ===================== -->
+    <!-- Left rabbit-ear -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M52,46 L30,16" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M28,14 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+    <!-- Right rabbit-ear -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M56,46 L78,16" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M80,14 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+
+    <!-- ===================== TV body (rounded rectangle) ===================== -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M20,44 L88,44 Q92,44 92,48 L92,86 Q92,90 88,90 L20,90 Q16,90 16,86 L16,48 Q16,44 20,44 Z" />
+
+    <!-- ===================== Test-pattern screen ===================== -->
+    <!-- Background bezel (dark gap) -->
+    <path
+        android:fillColor="#FF0F4C81"
+        android:pathData="M22,50 L80,50 Q82,50 82,52 L82,80 Q82,82 80,82 L22,82 Q20,82 20,80 L20,52 Q20,50 22,50 Z" />
+
+    <!-- SMPTE-ish colour bars (7 vertical strips inside the screen rect
+         spanning x=22..80 width=58, top y=50..76 height=26). Each bar ≈ 8.28 wide. -->
+    <path android:fillColor="#FFC0C0C0" android:pathData="M22,50 L30.3,50 L30.3,76 L22,76 Z" />
+    <path android:fillColor="#FFC0C000" android:pathData="M30.3,50 L38.6,50 L38.6,76 L30.3,76 Z" />
+    <path android:fillColor="#FF00C0C0" android:pathData="M38.6,50 L46.9,50 L46.9,76 L38.6,76 Z" />
+    <path android:fillColor="#FF00C000" android:pathData="M46.9,50 L55.1,50 L55.1,76 L46.9,76 Z" />
+    <path android:fillColor="#FFC000C0" android:pathData="M55.1,50 L63.4,50 L63.4,76 L55.1,76 Z" />
+    <path android:fillColor="#FFC00000" android:pathData="M63.4,50 L71.7,50 L71.7,76 L63.4,76 Z" />
+    <path android:fillColor="#FF0000C0" android:pathData="M71.7,50 L80,50 L80,76 L71.7,76 Z" />
+
+    <!-- Bottom strip: small black/white reference squares -->
+    <path android:fillColor="#FF000000" android:pathData="M22,76 L51,76 L51,82 L22,82 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M51,76 L80,76 L80,82 L51,82 Z" />
+
+    <!-- ===================== Knobs & legs ===================== -->
+    <!-- Two control knobs on the right edge of the TV body -->
+    <path
+        android:fillColor="#FF0F4C81"
+        android:pathData="M86,56 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0" />
+    <path
+        android:fillColor="#FF0F4C81"
+        android:pathData="M86,68 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0" />
+    <!-- Stand legs -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M30,92 L24,98" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M78,92 L84,98" />
+</vector>
