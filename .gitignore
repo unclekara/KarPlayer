@@ -22,3 +22,6 @@ local.properties
 # Logcat / debugging dumps occasionally written here
 /logcat_live.txt
 /logcat_dump.txt
+
+# Original spec (kept locally, not in repo)
+/KarPlayer_TZ.md

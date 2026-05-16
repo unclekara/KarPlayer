@@ -1,0 +1,34 @@
+KarPlayer SRT
+Copyright 2026 Alexander Karabatov
+
+This product includes software developed at Haivision (https://github.com/Haivision/srt):
+  Secure Reliable Transport (SRT) Protocol
+  Copyright (c) 2018 Haivision Systems Inc.
+  Licensed under the Mozilla Public License, v. 2.0
+  https://www.mozilla.org/en-US/MPL/2.0/
+
+  libsrt is fetched from source at build time and linked dynamically. The
+  unmodified source is available at https://github.com/Haivision/srt at the
+  tag pinned in srt/src/main/cpp/CMakeLists.txt (currently v1.5.4). Per the
+  MPL-2.0, any modifications to libsrt source files (we make none) would
+  have to be released under the same license; the linking exception in
+  MPL-2.0 §3.3 permits combining libsrt as a library with the Apache-2.0
+  licensed code in this repository.
+
+This product includes software developed at Mbed TLS Contributors:
+  Mbed TLS (https://github.com/Mbed-TLS/mbedtls)
+  Licensed under the Apache License, Version 2.0
+  https://www.apache.org/licenses/LICENSE-2.0
+
+  Mbed TLS is fetched from source at build time and linked statically into
+  libsrt for AES encryption (SRT passphrase support). The unmodified source
+  is available at https://github.com/Mbed-TLS/mbedtls at the tag pinned in
+  srt/src/main/cpp/CMakeLists.txt (currently v3.6.2).
+
+This product uses AndroidX Media3 (ExoPlayer):
+  Copyright (c) The Android Open Source Project
+  Licensed under the Apache License, Version 2.0
+
+This product uses Jetpack Compose and other AndroidX libraries:
+  Copyright (c) The Android Open Source Project
+  Licensed under the Apache License, Version 2.0

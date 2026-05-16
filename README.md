@@ -1,0 +1,146 @@
+# KarPlayer SRT
+
+Low-latency Android receiver for live MPEG-TS over [SRT](https://github.com/Haivision/srt).
+Built for professional live production: handshake, decode, surface — minimum
+moving parts, end-to-end target **< 200 ms on LAN**.
+
+- **libsrt 1.5.4** with AES encryption (via mbedtls 3.6.2), built from source per ABI
+- **Media3 / ExoPlayer 1.3.1** with MPEG-TS extractor and hardware H.264 / H.265 decode
+- **Kotlin 2.0 + Jetpack Compose** UI; minSdk 26, target 34
+- **ABIs**: `arm64-v8a`, `x86_64`
+- **16 KB page-size aligned** (Android 15+ requirement)
+
+## Status
+
+Verified end-to-end against a vMix SRT listener (HEVC + AAC) on a Pixel 8.
+Encryption (passphrase / PBKEYLEN 128/192/256) works against vMix. Receiver-side
+TSBPD latency, bandwidth cap, and stream-ID are all wired through.
+
+## Features
+
+- Caller-mode SRT connect (listener / rendezvous stubbed in JNI; not exposed in UI yet)
+- Adjustable receiver latency (slider 20–1000 ms, manual input up to 8000 ms)
+- AES-128/192/256 passphrase support, key-length selectable
+- Live stats overlay: RTT, bitrate, packet loss (colour-coded), jitter, retx count
+- Codec / resolution / sample-rate readout from `Player.Listener.onTracksChanged`
+- Aspect-ratio auto-detect via `AspectRatioFrameLayout`
+- Auto-reconnect on network drops (exponential backoff 200 ms → 5 s, infinite retries)
+- Lifecycle-driven reconnect on app resume
+- Immersive fullscreen, lock mode (long-press to unlock)
+- Swipe-to-adjust brightness (left half) and volume (right half)
+
+## Repository layout
+
+```
+KarPlayer/
+├── app/        Application module, DI, MainActivity, launcher icon
+├── srt/        JNI bridge + libsrt + mbedtls (built via ExternalProject_Add)
+├── player/     ExoPlayer integration, LoadControl, MediaInfo state, auto-reconnect
+└── ui/         Compose: ConnectionScreen, PlayerScreen, ViewModel
+```
+
+## Build
+
+### Requirements
+
+- **JDK 17** (OpenJDK / Temurin)
+- **Android SDK** with:
+  - `platforms;android-34`
+  - `build-tools;34.0.0`
+  - `ndk;27.3.13750724` (NDK r27 or newer — required for 16 KB-aligned `libc++_shared.so`)
+  - `cmake;3.22.1`
+- **Linux / macOS / WSL2** recommended. Native windows builds work too if your
+  CMake / NDK paths are POSIX-clean.
+
+### First build
+
+```bash
+./gradlew :app:assembleDebug
+```
+
+Note the **first build is slow (~10 min)**: libsrt and mbedtls are cloned
+shallow from upstream at the tags pinned in
+`srt/src/main/cpp/CMakeLists.txt` and cross-compiled per ABI. Subsequent
+builds reuse the cached EP artifacts.
+
+### Release APK
+
+```bash
+./gradlew :app:assembleRelease
+```
+
+The release build is currently signed with the standard Android debug
+keystore — convenient for personal builds and ad-hoc installs via `adb`,
+**but you must replace it before any public / Play Store distribution.**
+Generate a real keystore and update `signingConfigs` in `app/build.gradle.kts`.
+
+R8 minification is disabled by default; the file `app/proguard-rules.pro`
+is a placeholder for when you turn it on.
+
+### Switching libsrt / mbedtls versions
+
+Edit the `SRT_VERSION` / `MBEDTLS_VERSION` values in
+`srt/src/main/cpp/CMakeLists.txt` (or override `-DSRT_VERSION=...` in
+`srt/build.gradle.kts`). Then either:
+
+```bash
+rm -rf srt/.cxx srt/build   # full reset
+# or just the ExternalProject caches:
+rm -rf srt/.cxx/Debug/*/srt-ep srt/.cxx/Debug/*/mbedtls-ep
+```
+
+…and rebuild.
+
+## Test it with FFmpeg
+
+If you don't have vMix or another SRT source, launch a local SRT listener
+that publishes a test pattern:
+
+```bash
+ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 \
+       -f lavfi -i sine=frequency=440 \
+       -c:v libx264 -preset ultrafast -tune zerolatency \
+       -c:a aac \
+       -f mpegts "srt://0.0.0.0:9000?mode=listener&latency=120"
+```
+
+Then in the app: host = your machine's LAN IP, port = 9000, latency = 120.
+
+## Architecture notes
+
+- **`SrtDataSource` ↔ ExoPlayer**: SRT live mode delivers fixed-size payloads
+  (1316 bytes by default). Media3 extractors call `DataSource.read` with
+  arbitrary lengths (down to a few bytes during track sniffing). We absorb
+  that mismatch with an internal `rxBuf` in `SrtSocket.kt`: each underlying
+  `srt_recv` pulls a full message; the caller is served incrementally.
+- **TRANSTYPE first**: `SRTO_TRANSTYPE = SRTT_LIVE` is set before any other
+  option per the libsrt configuration guidelines — it bulk-presets
+  `MESSAGEAPI`, `TSBPDMODE`, `TLPKTDROP`, and `PAYLOADSIZE`.
+- **State race fix**: ExoPlayer's `STATE_IDLE` event from `player.stop()`
+  during `disconnect()` is ignored while we're in `CONNECTING` /
+  `RECONNECTING`, otherwise it would clobber the new attempt.
+- **16 KB alignment**: All native `.so` files are linked with
+  `-Wl,-z,max-page-size=16384` (applied via `CMAKE_SHARED_LINKER_FLAGS`
+  to both libsrt's and our own JNI library).
+
+## Known limitations / future work
+
+- **Caller mode only** in UI; listener / rendezvous wired in JNI but not exposed.
+- **No PiP / background audio** when the app is minimised — current behaviour
+  drops the SRT socket and reconnects on resume.
+- **No stream recording** (writing the received MPEG-TS to disk).
+- **No multipath / bonding** on RX (libsrt bonding is compiled in but not used).
+- **`pktRcvRetransTotal`** is unavailable in this libsrt minor — we report
+  the sender-side counter (`pktRetransTotal`) as a stand-in.
+- **Jitter** in the overlay is a proxy (`msRcvBuf` from `SRT_TRACEBSTATS`);
+  true per-packet PCR jitter would have to be measured on the TS layer.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
+
+Third-party components and their licenses are listed in [NOTICE](NOTICE).
+
+## Author
+
+Alexander Karabatov
