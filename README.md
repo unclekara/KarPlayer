@@ -69,10 +69,26 @@ builds reuse the cached EP artifacts.
 ./gradlew :app:assembleRelease
 ```
 
-The release build is currently signed with the standard Android debug
-keystore — convenient for personal builds and ad-hoc installs via `adb`,
-**but you must replace it before any public / Play Store distribution.**
-Generate a real keystore and update `signingConfigs` in `app/build.gradle.kts`.
+Release signing is loaded from `keystore.properties` at the repo root
+(gitignored). To produce a signed release on a fresh checkout, generate
+your own keystore and create the properties file:
+
+```bash
+keytool -genkeypair -keystore karplayer-release.keystore \
+    -alias karplayer -keyalg RSA -keysize 4096 -validity 10000 \
+    -dname "CN=Your Name, O=KarPlayer, C=US"
+
+cat > keystore.properties <<EOF
+storeFile=karplayer-release.keystore
+storePassword=<your-password>
+keyAlias=karplayer
+keyPassword=<your-password>
+EOF
+```
+
+If `keystore.properties` is absent, release builds fall back to the standard
+Android debug keystore so local development still works — but you cannot
+distribute that APK publicly.
 
 R8 minification is disabled by default; the file `app/proguard-rules.pro`
 is a placeholder for when you turn it on.
@@ -140,6 +156,15 @@ Then in the app: host = your machine's LAN IP, port = 9000, latency = 120.
 Apache License 2.0 — see [LICENSE](LICENSE).
 
 Third-party components and their licenses are listed in [NOTICE](NOTICE).
+
+## Development
+
+This project was developed with extensive AI assistance (Anthropic Claude).
+Architecture decisions, the libsrt + mbedtls integration, the JNI layer, the
+Compose UI, and most of the iteration on protocol-level issues happened in
+pair-programming sessions. Every commit carries a `Co-Authored-By` trailer
+reflecting that. Human selection, structure, review, and end-to-end
+verification on real hardware are mine.
 
 ## Author
 

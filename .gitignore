@@ -25,3 +25,9 @@ local.properties
 
 # Original spec (kept locally, not in repo)
 /KarPlayer_TZ.md
+
+# Signing material — NEVER commit. Keystore file and credentials live in
+# keystore.properties (loaded by app/build.gradle.kts when present).
+/karplayer-release.keystore
+/keystore.properties
+/genkeystore.sh
