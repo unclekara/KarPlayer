@@ -19,6 +19,7 @@ class PlayerViewModel(
     val lastError: StateFlow<String?> = playerManager.lastError
     val mediaInfo: StateFlow<MediaInfo> = playerManager.mediaInfo
     val reconnectAttempt: StateFlow<Int> = playerManager.reconnectAttempt
+    val isInPip: StateFlow<Boolean> = playerManager.isInPip
 
     fun onAppResumed() = playerManager.onAppResumed()
 
@@ -29,7 +30,12 @@ class PlayerViewModel(
 
     fun connect(cfg: ConnectionConfig) {
         _config.value = cfg
-        playerManager.connect(cfg.host, cfg.port, cfg.toSrtOptions())
+        playerManager.connect(
+            host = cfg.host,
+            port = cfg.port,
+            options = cfg.toSrtOptions(),
+            useSoftwareDecoder = cfg.useSoftwareDecoder
+        )
     }
 
     fun disconnect() { playerManager.disconnect() }

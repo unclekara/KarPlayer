@@ -29,7 +29,18 @@ TSBPD latency, bandwidth cap, and stream-ID are all wired through.
 - Codec / resolution / sample-rate readout from `Player.Listener.onTracksChanged`
 - Aspect-ratio auto-detect via `AspectRatioFrameLayout`
 - Auto-reconnect on network drops (exponential backoff 200 ms → 5 s, infinite retries)
-- Lifecycle-driven reconnect on app resume
+- Faster reconnect on Wi-Fi roaming / network swap via `ConnectivityManager.NetworkCallback`
+- Lifecycle-driven reconnect on app resume (skipped during PiP transitions)
+- **Picture-in-Picture** support — playback survives Home / Recents without
+  audio interruption
+- Proper **AudioFocus** integration (auto-pause on call / notification, ducking,
+  Bluetooth routing, Media-volume rocker)
+- **Wi-Fi performance lock** while a session is active to suppress radio
+  power-save jitter
+- **Software-decoder toggle** in settings — escape hatch when a buggy HW
+  decoder breaks playback. By default HW decode is used, but
+  `c2.exynos.avc.decoder` is automatically excluded on Pixel 8 / 9 to avoid
+  the known green-tearing / freeze bug on live MPEG-TS H.264
 - Immersive fullscreen, lock mode (long-press to unlock)
 - Swipe-to-adjust brightness (left half) and volume (right half)
 

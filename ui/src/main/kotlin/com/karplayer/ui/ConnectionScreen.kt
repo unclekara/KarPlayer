@@ -23,6 +23,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +58,7 @@ fun ConnectionScreen(
     var maxBwMbps by remember { mutableStateOf(initial.maxBandwidthMbps.toFloat()) }
     var passphrase by remember { mutableStateOf(initial.passphrase) }
     var pbkeyLen by remember { mutableStateOf(initial.pbkeyLen) }
+    var useSoftwareDecoder by remember { mutableStateOf(initial.useSoftwareDecoder) }
 
     val deviceIp = remember { findLocalIPv4() }
     val isTv = isTvDevice()
@@ -321,6 +323,31 @@ fun ConnectionScreen(
             }
         }
 
+        Section("Decoder") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Use software decoder",
+                    color = Color.White,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = useSoftwareDecoder,
+                    onCheckedChange = { useSoftwareDecoder = it }
+                )
+            }
+            HelperText(
+                "Forces ExoPlayer to pick a software-only video decoder. " +
+                "Slightly higher CPU and latency, but avoids HW-decoder " +
+                "bugs (green tearing / freezes seen on some Exynos and old " +
+                "Amlogic chipsets). Enable only if hardware decoding " +
+                "misbehaves on your device."
+            )
+        }
+
         Spacer(Modifier.height(8.dp))
         FocusableButton(
             onClick = {
@@ -338,7 +365,8 @@ fun ConnectionScreen(
                         maxBwMode = maxBwMode,
                         maxBandwidthMbps = maxBwMbps.toInt(),
                         passphrase = passphrase,
-                        pbkeyLen = pbkeyLen
+                        pbkeyLen = pbkeyLen,
+                        useSoftwareDecoder = useSoftwareDecoder
                     )
                 )
             },

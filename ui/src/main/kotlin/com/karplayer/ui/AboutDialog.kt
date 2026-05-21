@@ -24,7 +24,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 
-private const val AUTHOR_EMAIL = "karabatoff@gmail.com"
+private const val AUTHOR_EMAIL = "hellokarabatov@gmail.com"
 
 @Composable
 fun AboutDialog(onDismiss: () -> Unit) {
@@ -66,11 +66,15 @@ fun AboutDialog(onDismiss: () -> Unit) {
                 Text("Author: Alexander Karabatov")
 
                 Text(
-                    text = thanksLine(prefix = "If you'd like to thank the author, drop a line to "),
-                    modifier = Modifier.clickable(onClick = openMail)
+                    text = "If you'd like to thank the author, drop a line by email:",
+                    fontWeight = FontWeight.Light
                 )
                 Text(
-                    text = thanksLine(prefix = "Хотите поблагодарить автора — напишите на "),
+                    text = "Хотите поблагодарить автора — напишите на email:",
+                    fontWeight = FontWeight.Light
+                )
+                Text(
+                    text = emailLink(),
                     modifier = Modifier.clickable(onClick = openMail)
                 )
             }
@@ -81,10 +85,9 @@ fun AboutDialog(onDismiss: () -> Unit) {
     )
 }
 
-/** Builds a sentence where the email at the end is underlined to read as a
- *  link, with the rest of the text in normal weight. */
-private fun thanksLine(prefix: String): AnnotatedString = buildAnnotatedString {
-    withStyle(SpanStyle(fontWeight = FontWeight.Light)) { append(prefix) }
+/** Underlined email styled as a link, on its own row beneath the EN+RU
+ *  thank-you lines. */
+private fun emailLink(): AnnotatedString = buildAnnotatedString {
     withStyle(
         SpanStyle(
             textDecoration = TextDecoration.Underline,

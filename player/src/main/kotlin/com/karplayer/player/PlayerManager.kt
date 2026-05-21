@@ -1,10 +1,15 @@
 package com.karplayer.player
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.view.Surface
+import androidx.media3.common.AudioAttributes as Media3AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -33,10 +38,55 @@ private data class Endpoint(val host: String, val port: Int, val options: SrtOpt
 
 class PlayerManager(context: Context) {
 
+    private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.Main.immediate)
 
-    val player: ExoPlayer = ExoPlayer.Builder(context, LowLatencyRenderersFactory(context))
+    /** Toggle exposed to UI via SrtOptions/ConnectionConfig — when true, the
+     *  renderers factory restricts codec selection to software-only decoders
+     *  (defensive escape hatch for HW-decoder quirks). Read on every codec
+     *  selection so toggling takes effect on the next connect. */
+    @Volatile private var useSoftwareDecoder: Boolean = false
+
+    // Keeps the Wi-Fi radio at full perf while a session is active. Without
+    // this, the OS may park the chip in a power-saving state once the screen
+    // dims or the app drops focus, adding tens of milliseconds of jitter.
+    private val wifiLock: WifiManager.WifiLock = run {
+        val wm = appContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "karplayer:srt-rx").apply {
+            setReferenceCounted(false)
+        }
+    }
+
+    private val connectivityManager =
+        appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+
+    // Speeds up the reconnect backoff when the default network comes back
+    // after a loss. We *don't* tear down a healthy session — Android can
+    // shuffle the default network internally without the user noticing.
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        @Volatile private var hadLoss = false
+        override fun onLost(network: Network) { hadLoss = true }
+        override fun onAvailable(network: Network) {
+            if (!hadLoss) return
+            hadLoss = false
+            if (!autoReconnectEnabled || lastEndpoint == null) return
+            mainHandler.post {
+                val s = _state.value
+                if (s == PlayerState.RECONNECTING || s == PlayerState.ERROR) {
+                    cancelReconnect()
+                    _reconnectAttempt.value = 0
+                    scheduleReconnect()
+                }
+                // PLAYING / BUFFERING / CONNECTING / IDLE — leave alone.
+            }
+        }
+    }
+
+    val player: ExoPlayer = ExoPlayer.Builder(
+        appContext,
+        LowLatencyRenderersFactory(appContext) { useSoftwareDecoder }
+    )
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
@@ -65,6 +115,30 @@ class PlayerManager(context: Context) {
     private val _reconnectAttempt = MutableStateFlow(0)
     val reconnectAttempt: StateFlow<Int> = _reconnectAttempt.asStateFlow()
 
+    // Whether the host Activity is currently in picture-in-picture mode.
+    // Set by MainActivity via setInPipMode(); consumed by PlayerScreen to
+    // hide overlay chrome when the player is shrunk to a tiny window.
+    private val _isInPip = MutableStateFlow(false)
+    val isInPip: StateFlow<Boolean> = _isInPip.asStateFlow()
+
+    // True for a short window around any PiP transition (entering OR
+    // exiting). ON_RESUME fires both while in PiP and shortly after exiting
+    // it; without this guard, our onAppResumed() would tear the session
+    // down on both edges, causing the audible pause + reconnect when the
+    // user expands the PiP window back to full screen.
+    @Volatile private var recentlyInPip: Boolean = false
+    private var clearPipGuardJob: Job? = null
+
+    fun setInPipMode(value: Boolean) {
+        _isInPip.value = value
+        recentlyInPip = true
+        clearPipGuardJob?.cancel()
+        clearPipGuardJob = scope.launch {
+            delay(PIP_GUARD_MS)
+            recentlyInPip = false
+        }
+    }
+
     private var statsJob: Job? = null
     private var reconnectJob: Job? = null
     private var activeDataSource: SrtDataSource? = null
@@ -77,6 +151,19 @@ class PlayerManager(context: Context) {
     private var autoReconnectEnabled: Boolean = false
 
     init {
+        // Media-volume routing + BT routing + auto pause/duck on calls and
+        // notifications. ExoPlayer handles focus transitions for us when
+        // handleAudioFocus = true.
+        player.setAudioAttributes(
+            Media3AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                .build(),
+            /* handleAudioFocus = */ true
+        )
+
+        runCatching { connectivityManager?.registerDefaultNetworkCallback(networkCallback) }
+
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 val current = _state.value
@@ -136,13 +223,20 @@ class PlayerManager(context: Context) {
         })
     }
 
-    fun connect(host: String, port: Int, options: SrtOptions) {
+    fun connect(
+        host: String,
+        port: Int,
+        options: SrtOptions,
+        useSoftwareDecoder: Boolean = false
+    ) {
         cancelReconnect()
         teardownCurrentSession()
         lastEndpoint = Endpoint(host, port, options)
         autoReconnectEnabled = true
+        this.useSoftwareDecoder = useSoftwareDecoder
         _lastError.value = null
         _reconnectAttempt.value = 0
+        if (!wifiLock.isHeld) runCatching { wifiLock.acquire() }
         startSession()
     }
 
@@ -155,18 +249,23 @@ class PlayerManager(context: Context) {
         _stats.value = SrtStats()
         _mediaInfo.value = MediaInfo()
         _reconnectAttempt.value = 0
+        if (wifiLock.isHeld) runCatching { wifiLock.release() }
     }
 
     /** Called by UI on Lifecycle.Event.ON_RESUME.
      *
-     *  We always force a full restart of the SRT session — both when it died
+     *  We force a full restart of the SRT session — both when it died
      *  silently in the background and when it kept running. For a live stream
      *  the latter case is actually worse: the SRT receiver buffer keeps
      *  filling, the video sink was detached, and on resume the player would
      *  resume from the stale buffered position, accumulating latency every
      *  time the user backgrounds the app. Reconnecting drops everything and
-     *  jumps back to the live edge. */
+     *  jumps back to the live edge.
+     *
+     *  PiP transitions are exempt — there ON_RESUME fires too, but the user
+     *  expects continuous playback. See [recentlyInPip]. */
     fun onAppResumed() {
+        if (recentlyInPip) return
         val ep = lastEndpoint ?: return
         if (!autoReconnectEnabled) return
         cancelReconnect()
@@ -185,6 +284,8 @@ class PlayerManager(context: Context) {
         cancelReconnect()
         statsJob?.cancel()
         scope.cancel()
+        if (wifiLock.isHeld) runCatching { wifiLock.release() }
+        runCatching { connectivityManager?.unregisterNetworkCallback(networkCallback) }
         mainHandler.post { player.release() }
     }
 
@@ -263,5 +364,12 @@ class PlayerManager(context: Context) {
         statsJob = scope.launch {
             ds.stats.collect { _stats.value = it }
         }
+    }
+
+    private companion object {
+        // How long after a PiP transition to keep ignoring forced-resume.
+        // Long enough to cover the ON_RESUME that fires shortly after the
+        // user maximises the PiP window back to full screen.
+        const val PIP_GUARD_MS = 2000L
     }
 }

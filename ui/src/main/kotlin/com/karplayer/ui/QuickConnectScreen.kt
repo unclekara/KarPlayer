@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.widthIn
@@ -86,22 +88,20 @@ fun QuickConnectScreen(
 
         Box(modifier = Modifier.fillMaxSize().padding(24.dp)) {
 
-        FocusableIconButton(
-            onClick = { showAbout = true },
-            unfocusedContentColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Info,
-                contentDescription = "About",
-                modifier = Modifier.size(28.dp)
-            )
-        }
-
+        // Top-aligned + scrollable so the Settings button never gets pushed
+        // off the screen when the device is rotated to landscape (short
+        // vertical extent). On portrait the natural top-padding leaves the
+        // title comfortably below the status bar.
+        //
+        // Note: the IconButton (About) is rendered AFTER this Column so the
+        // pointer-hit-test lands on it first — otherwise a full-width Column
+        // sits on top of the top-right icon and swallows taps.
         Column(
-            modifier = Modifier.align(Alignment.Center).widthIn(max = 520.dp),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = 520.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(top = 40.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
@@ -156,6 +156,20 @@ fun QuickConnectScreen(
                 Spacer(Modifier.padding(horizontal = 6.dp))
                 Text("Settings…", fontSize = 16.sp)
             }
+        }
+
+        // Drawn last so it stays on top of the scroll Column and receives
+        // taps in the top-right corner.
+        FocusableIconButton(
+            onClick = { showAbout = true },
+            unfocusedContentColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+            modifier = Modifier.align(Alignment.TopEnd)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = "About",
+                modifier = Modifier.size(28.dp)
+            )
         }
         }
     }

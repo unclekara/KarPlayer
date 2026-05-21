@@ -21,7 +21,8 @@ data class ConnectionConfig(
     val maxBwMode: MaxBwMode = MaxBwMode.AUTO,
     val maxBandwidthMbps: Int = 50,
     val passphrase: String = "",
-    val pbkeyLen: Int = 0
+    val pbkeyLen: Int = 0,
+    val useSoftwareDecoder: Boolean = false
 ) {
     fun toSrtOptions(): SrtOptions = SrtOptions(
         latency = latencyMs,
@@ -48,6 +49,7 @@ object ConnectionConfigStore {
     private const val KEY_MAXBW_MBPS = "maxbw_mbps"
     private const val KEY_PASSPHRASE = "passphrase"
     private const val KEY_PBKEYLEN = "pbkeylen"
+    private const val KEY_SOFTWARE_DECODER = "software_decoder"
 
     fun load(context: Context): ConnectionConfig {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -64,7 +66,8 @@ object ConnectionConfigStore {
             }.getOrDefault(MaxBwMode.AUTO),
             maxBandwidthMbps = p.getInt(KEY_MAXBW_MBPS, 50),
             passphrase = p.getString(KEY_PASSPHRASE, "") ?: "",
-            pbkeyLen = p.getInt(KEY_PBKEYLEN, 0)
+            pbkeyLen = p.getInt(KEY_PBKEYLEN, 0),
+            useSoftwareDecoder = p.getBoolean(KEY_SOFTWARE_DECODER, false)
         )
     }
 
@@ -79,6 +82,7 @@ object ConnectionConfigStore {
             putInt(KEY_MAXBW_MBPS, cfg.maxBandwidthMbps)
             putString(KEY_PASSPHRASE, cfg.passphrase)
             putInt(KEY_PBKEYLEN, cfg.pbkeyLen)
+            putBoolean(KEY_SOFTWARE_DECODER, cfg.useSoftwareDecoder)
             apply()
         }
     }

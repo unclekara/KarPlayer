@@ -83,6 +83,7 @@ fun PlayerScreen(
     val media by viewModel.mediaInfo.collectAsState()
     val lastError by viewModel.lastError.collectAsState()
     val reconnectAttempt by viewModel.reconnectAttempt.collectAsState()
+    val isInPip by viewModel.isInPip.collectAsState()
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -296,8 +297,10 @@ fun PlayerScreen(
             )
         }
 
-        // Overlays — completely hidden while locked.
-        if (!locked && overlayVisible) {
+        // Overlays — completely hidden while locked or while in
+        // picture-in-picture (the window is too small for chrome anyway,
+        // and Android's own PiP gesture surface fights ours otherwise).
+        if (!locked && overlayVisible && !isInPip) {
             StatsOverlay(
                 stats = stats,
                 media = media,
