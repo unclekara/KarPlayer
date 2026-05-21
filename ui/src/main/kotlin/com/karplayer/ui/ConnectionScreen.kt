@@ -21,9 +21,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -141,7 +139,7 @@ fun ConnectionScreen(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
+                TvAwareTextField(
                     value = host,
                     onValueChange = { host = it.trim() },
                     label = {
@@ -160,16 +158,14 @@ fun ConnectionScreen(
                             }
                         )
                     },
-                    singleLine = true,
                     modifier = Modifier
                         .weight(2f)
                         .focusRequester(hostFocus)
                 )
-                OutlinedTextField(
+                TvAwareTextField(
                     value = port,
                     onValueChange = { port = it.filter { ch -> ch.isDigit() }.take(5) },
                     label = { Text("Port") },
-                    singleLine = true,
                     isError = port.isNotEmpty() && !portValid,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f)
@@ -181,12 +177,11 @@ fun ConnectionScreen(
                     (port.toIntOrNull()?.let { ":$it" } ?: "")
                 )
             }
-            OutlinedTextField(
+            TvAwareTextField(
                 value = streamId,
                 onValueChange = { streamId = it },
                 label = { Text("Stream ID") },
                 placeholder = { Text("optional, sender-defined") },
-                singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -208,7 +203,7 @@ fun ConnectionScreen(
                     modifier = Modifier.size(44.dp)
                 ) { Text("−", fontSize = 18.sp) }
 
-                OutlinedTextField(
+                TvAwareTextField(
                     value = latencyText,
                     onValueChange = { raw ->
                         val cleaned = raw.filter { it.isDigit() }.take(5)
@@ -216,7 +211,6 @@ fun ConnectionScreen(
                         cleaned.toIntOrNull()?.let { latencyMs = it.coerceIn(20, 8000) }
                     },
                     label = { Text("Latency, ms") },
-                    singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f)
                 )
@@ -279,12 +273,11 @@ fun ConnectionScreen(
         }
 
         Section("Encryption (AES)") {
-            OutlinedTextField(
+            TvAwareTextField(
                 value = passphrase,
                 onValueChange = { passphrase = it },
                 label = { Text("Passphrase") },
                 placeholder = { Text("empty = no encryption") },
-                singleLine = true,
                 isError = passphraseError,
                 supportingText = {
                     if (passphraseError) {
@@ -324,21 +317,11 @@ fun ConnectionScreen(
         }
 
         Section("Decoder") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Use software decoder",
-                    color = Color.White,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(
-                    checked = useSoftwareDecoder,
-                    onCheckedChange = { useSoftwareDecoder = it }
-                )
-            }
+            FocusableSwitchRow(
+                label = "Use software decoder",
+                checked = useSoftwareDecoder,
+                onCheckedChange = { useSoftwareDecoder = it }
+            )
             HelperText(
                 "Forces ExoPlayer to pick a software-only video decoder. " +
                 "Slightly higher CPU and latency, but avoids HW-decoder " +
