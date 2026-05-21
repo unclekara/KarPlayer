@@ -26,7 +26,8 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        // armeabi-v7a included for legacy / low-cost TV boxes (Amlogic, RK).
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
     signingConfigs {
@@ -62,6 +63,16 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+
+    // Rename output APK files to include the project name and version so
+    // distributing them is less ambiguous than `app-release.apk`.
+    applicationVariants.all {
+        val variant = this
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            output.outputFileName = "KarPlayer-${variant.versionName}-${variant.buildType.name}.apk"
+        }
+    }
 }
 
 dependencies {

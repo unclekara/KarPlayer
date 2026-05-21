@@ -75,7 +75,10 @@ Java_com_karplayer_srt_SrtNative_nativeCreate(JNIEnv* /*env*/, jobject /*thiz*/)
 // mode: 0=CALLER, 1=LISTENER, 2=RENDEZVOUS
 // Returns 0 on success or a negative KP_ERR_* code.
 // ----------------------------------------------------------------------------
-JNIEXPORT jint JNICALL
+// Returns the socket handle to use for subsequent read/close, or a negative
+// KP_ERR_* code on failure. For LISTENER mode the listener socket is closed
+// after accept() and the returned handle is the accepted peer connection.
+JNIEXPORT jlong JNICALL
 Java_com_karplayer_srt_SrtNative_nativeConnect(
         JNIEnv* env, jobject /*thiz*/,
         jlong handle, jstring jhost, jint port,
@@ -113,6 +116,13 @@ Java_com_karplayer_srt_SrtNative_nativeConnect(
         env->ReleaseStringUTFChars(jhost, host);
         return KP_ERR_SETOPT;
     }
+    // The effective TSBPD latency negotiated during handshake is
+    // max(local_RCVLATENCY, peer_PEERLATENCY). Without setting PEERLATENCY
+    // we let the sender's RCVLATENCY win — typically much higher than what
+    // a low-latency live setup wants. By advertising our own PEERLATENCY at
+    // the same value we cap the negotiation at the user-chosen number.
+    int peerLatency = latencyMs;
+    srt_setsockopt(s, 0, SRTO_PEERLATENCY, &peerLatency, sizeof(peerLatency));
 
     int rcvsyn = 1;           // blocking recv; cancel via srt_close from caller
     srt_setsockopt(s, 0, SRTO_RCVSYN, &rcvsyn, sizeof(rcvsyn));
@@ -163,9 +173,17 @@ Java_com_karplayer_srt_SrtNative_nativeConnect(
     }
     env->ReleaseStringUTFChars(jhost, host);
 
-    int rc = -1;
     if (mode == 0) { // CALLER
-        rc = srt_connect(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
+        int rc = srt_connect(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
+        if (rc == SRT_ERROR) {
+            int rej = srt_getrejectreason(s);
+            const char* rejStr = srt_rejectreason_str(rej);
+            LOGE("srt_connect failed: %s | rej_code=%d rej_reason=%s",
+                 srt_getlasterror_str(), rej, rejStr ? rejStr : "?");
+            return KP_ERR_CONNECT;
+        }
+        LOGI("SRT connected (caller, port=%d latency=%dms)", port, latencyMs);
+        return static_cast<jlong>(s);
     } else if (mode == 1) { // LISTENER
         if (srt_bind(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) < 0) {
             LOGE("srt_bind failed: %s", srt_getlasterror_str());
@@ -175,21 +193,22 @@ Java_com_karplayer_srt_SrtNative_nativeConnect(
             LOGE("srt_listen failed: %s", srt_getlasterror_str());
             return KP_ERR_CONNECT;
         }
+        LOGI("SRT listening on :%d (latency=%dms)", port, latencyMs);
+
         sockaddr_in peer{};
         int peerlen = sizeof(peer);
         SRTSOCKET accepted = srt_accept(s, reinterpret_cast<sockaddr*>(&peer), &peerlen);
+        // We hand the accepted peer-socket to the Kotlin layer; the listener
+        // socket has done its job and is closed now to free the port.
+        srt_close(s);
         if (accepted == SRT_INVALID_SOCK) {
             LOGE("srt_accept failed: %s", srt_getlasterror_str());
             return KP_ERR_CONNECT;
         }
-        // Close the listener; the accepted socket replaces the handle on the
-        // Kotlin side via the returned-handle convention below.
-        srt_close(s);
-        // Stash accepted into handle via positive return — but JNI signature is int.
-        // For now, listener mode is not exposed end-to-end (CALLER is the
-        // primary path for an RX player); accept the listener case as a TODO.
-        srt_close(accepted);
-        return KP_ERR_CONNECT;
+        char peerIp[INET_ADDRSTRLEN]{};
+        inet_ntop(AF_INET, &peer.sin_addr, peerIp, sizeof(peerIp));
+        LOGI("SRT accepted from %s:%d", peerIp, ntohs(peer.sin_port));
+        return static_cast<jlong>(accepted);
     } else if (mode == 2) { // RENDEZVOUS
         int rdv = 1;
         srt_setsockopt(s, 0, SRTO_RENDEZVOUS, &rdv, sizeof(rdv));
@@ -197,21 +216,15 @@ Java_com_karplayer_srt_SrtNative_nativeConnect(
             LOGE("srt_bind (rendezvous) failed: %s", srt_getlasterror_str());
             return KP_ERR_CONNECT;
         }
-        rc = srt_connect(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
-    } else {
-        return KP_ERR_INVALID;
+        int rc = srt_connect(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
+        if (rc == SRT_ERROR) {
+            LOGE("srt_connect (rendezvous) failed: %s", srt_getlasterror_str());
+            return KP_ERR_CONNECT;
+        }
+        LOGI("SRT rendezvous connected (port=%d latency=%dms)", port, latencyMs);
+        return static_cast<jlong>(s);
     }
-
-    if (rc == SRT_ERROR) {
-        int rej = srt_getrejectreason(s);
-        const char* rejStr = srt_rejectreason_str(rej);
-        LOGE("srt_connect failed: %s | rej_code=%d rej_reason=%s",
-             srt_getlasterror_str(), rej, rejStr ? rejStr : "?");
-        return KP_ERR_CONNECT;
-    }
-    LOGI("SRT connected (port=%d latency=%dms streamid_set=%d)",
-         port, latencyMs, jstreamId ? 1 : 0);
-    return KP_OK;
+    return KP_ERR_INVALID;
 #endif
 }
 

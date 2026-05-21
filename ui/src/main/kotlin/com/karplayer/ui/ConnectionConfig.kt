@@ -43,6 +43,7 @@ object ConnectionConfigStore {
     private const val KEY_PORT = "port"
     private const val KEY_LATENCY = "latency"
     private const val KEY_STREAM_ID = "stream_id"
+    private const val KEY_MODE = "mode"
     private const val KEY_MAXBW_MODE = "maxbw_mode"
     private const val KEY_MAXBW_MBPS = "maxbw_mbps"
     private const val KEY_PASSPHRASE = "passphrase"
@@ -55,6 +56,9 @@ object ConnectionConfigStore {
             port = p.getInt(KEY_PORT, 9000),
             latencyMs = p.getInt(KEY_LATENCY, 120),
             streamId = p.getString(KEY_STREAM_ID, "") ?: "",
+            mode = runCatching {
+                SrtMode.valueOf(p.getString(KEY_MODE, SrtMode.CALLER.name)!!)
+            }.getOrDefault(SrtMode.CALLER),
             maxBwMode = runCatching {
                 MaxBwMode.valueOf(p.getString(KEY_MAXBW_MODE, MaxBwMode.AUTO.name)!!)
             }.getOrDefault(MaxBwMode.AUTO),
@@ -70,6 +74,7 @@ object ConnectionConfigStore {
             putInt(KEY_PORT, cfg.port)
             putInt(KEY_LATENCY, cfg.latencyMs)
             putString(KEY_STREAM_ID, cfg.streamId)
+            putString(KEY_MODE, cfg.mode.name)
             putString(KEY_MAXBW_MODE, cfg.maxBwMode.name)
             putInt(KEY_MAXBW_MBPS, cfg.maxBandwidthMbps)
             putString(KEY_PASSPHRASE, cfg.passphrase)

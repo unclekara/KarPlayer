@@ -41,7 +41,7 @@ class SrtSocket {
         val h = SrtNative.nativeCreate()
         if (h < 0) throw IOException("nativeCreate failed (libsrt missing or stub mode?)")
 
-        val rc = SrtNative.nativeConnect(
+        val result = SrtNative.nativeConnect(
             handle = h,
             host = host,
             port = port,
@@ -54,11 +54,14 @@ class SrtSocket {
             passphrase = options.passphrase,
             pbkeylen = options.pbkeyLen
         )
-        if (rc != SrtNative.OK) {
+        // Negative return = error code; non-negative = the actual handle to
+        // use (same as `h` for caller/rendezvous, the accepted-peer handle
+        // for listener — the listener socket itself is closed natively).
+        if (result < 0) {
             SrtNative.nativeClose(h)
-            throw IOException("SRT connect failed rc=$rc host=$host:$port")
+            throw IOException("SRT connect failed rc=$result host=$host:$port mode=${options.mode}")
         }
-        handle.set(h)
+        handle.set(result)
         startStatsPolling()
     }
 

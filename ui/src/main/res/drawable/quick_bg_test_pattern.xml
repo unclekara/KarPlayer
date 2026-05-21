@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Faded SMPTE-style test pattern, drawn full-bleed behind QuickConnectScreen.
+  Seven equal vertical bars in standard SMPTE colours, plus a black/white
+  reference strip near the bottom. The composable that consumes this drawable
+  applies an alpha (~0.08) so it reads as a subtle texture rather than UI.
+
+  Viewport is 700×400 (≈ 7:4 = banner-ish). When stretched across a phone in
+  portrait the bars become tall and narrow; on a TV in landscape they sit
+  proportionally. Either looks right.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="700dp"
+    android:height="400dp"
+    android:viewportWidth="700"
+    android:viewportHeight="400">
+
+    <!-- 7 colour bars from x=0..700, occupying y=0..330 (top 82.5%) -->
+    <path android:fillColor="#C0C0C0" android:pathData="M0,0 L100,0 L100,330 L0,330 Z" />
+    <path android:fillColor="#C0C000" android:pathData="M100,0 L200,0 L200,330 L100,330 Z" />
+    <path android:fillColor="#00C0C0" android:pathData="M200,0 L300,0 L300,330 L200,330 Z" />
+    <path android:fillColor="#00C000" android:pathData="M300,0 L400,0 L400,330 L300,330 Z" />
+    <path android:fillColor="#C000C0" android:pathData="M400,0 L500,0 L500,330 L400,330 Z" />
+    <path android:fillColor="#C00000" android:pathData="M500,0 L600,0 L600,330 L500,330 Z" />
+    <path android:fillColor="#0000C0" android:pathData="M600,0 L700,0 L700,330 L600,330 Z" />
+
+    <!-- B/W reference strip y=330..400 -->
+    <path android:fillColor="#000000" android:pathData="M0,330 L350,330 L350,400 L0,400 Z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M350,330 L700,330 L700,400 L350,400 Z" />
+</vector>

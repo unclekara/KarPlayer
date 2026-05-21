@@ -15,31 +15,32 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.karplayer.srt.SrtMode
 import kotlin.math.roundToInt
 
 @Composable
@@ -47,6 +48,7 @@ fun ConnectionScreen(
     initial: ConnectionConfig,
     onConnect: (ConnectionConfig) -> Unit
 ) {
+    var mode by remember { mutableStateOf(initial.mode) }
     var host by remember { mutableStateOf(initial.host) }
     var port by remember { mutableStateOf(initial.port.toString()) }
     var latencyMs by remember { mutableStateOf(initial.latencyMs) }
@@ -56,9 +58,21 @@ fun ConnectionScreen(
     var passphrase by remember { mutableStateOf(initial.passphrase) }
     var pbkeyLen by remember { mutableStateOf(initial.pbkeyLen) }
 
+    val deviceIp = remember { findLocalIPv4() }
+    val isTv = isTvDevice()
+    val hostFocus = remember { FocusRequester() }
+    LaunchedEffect(isTv) {
+        // On TV the first thing a user sees should already be focused so the
+        // remote's D-pad has somewhere to act. On phones the IME would pop up
+        // unprompted, which is annoying — leave focus floating there.
+        if (isTv) hostFocus.requestFocus()
+    }
     val passphraseError = passphrase.isNotEmpty() && passphrase.length !in 10..79
     val portValid = port.toIntOrNull()?.let { it in 1..65535 } == true
-    val canConnect = host.isNotBlank() && portValid && !passphraseError
+    // Listener can bind to all interfaces with empty host (we substitute
+    // 0.0.0.0 on submit); caller/rendezvous need an explicit peer address.
+    val hostValid = mode == SrtMode.LISTENER || host.isNotBlank()
+    val canConnect = hostValid && portValid && !passphraseError
 
     var showAbout by remember { mutableStateOf(false) }
     if (showAbout) AboutDialog(onDismiss = { showAbout = false })
@@ -81,24 +95,73 @@ fun ConnectionScreen(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 22.sp
             )
-            IconButton(onClick = { showAbout = true }) {
+            FocusableIconButton(
+                onClick = { showAbout = true },
+                unfocusedContentColor = MaterialTheme.colorScheme.primary
+            ) {
                 Icon(
                     imageVector = Icons.Outlined.Info,
                     contentDescription = "About",
-                    tint = Color.White
+                    modifier = Modifier.size(28.dp)
                 )
             }
         }
 
         Section("Connection") {
+            Text("Mode", color = Color.White.copy(alpha = 0.85f))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SrtMode.values().forEach { m ->
+                    FocusableFilterChip(
+                        selected = m == mode,
+                        onClick = { mode = m },
+                        label = {
+                            Text(
+                                when (m) {
+                                    SrtMode.CALLER -> "Caller"
+                                    SrtMode.LISTENER -> "Listener"
+                                    SrtMode.RENDEZVOUS -> "Rendezvous"
+                                }
+                            )
+                        }
+                    )
+                }
+            }
+            HelperText(
+                when (mode) {
+                    SrtMode.CALLER -> "We initiate the SRT handshake to the sender. " +
+                            "Host = sender's IP, Port = sender's listening port."
+                    SrtMode.LISTENER -> "We wait for the sender to connect to us. " +
+                            "Host = bind address (leave empty for 0.0.0.0 / all " +
+                            "interfaces). Port = our local listening port."
+                    SrtMode.RENDEZVOUS -> "Symmetric NAT-traversal mode. Both sides " +
+                            "connect simultaneously to each other's IP:port."
+                }
+            )
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = host,
                     onValueChange = { host = it.trim() },
-                    label = { Text("Host (IPv4)") },
-                    placeholder = { Text("192.168.1.10") },
+                    label = {
+                        Text(
+                            when (mode) {
+                                SrtMode.LISTENER -> "Bind address"
+                                else -> "Host (IPv4)"
+                            }
+                        )
+                    },
+                    placeholder = {
+                        Text(
+                            when (mode) {
+                                SrtMode.LISTENER -> "0.0.0.0"
+                                else -> "192.168.1.10"
+                            }
+                        )
+                    },
                     singleLine = true,
-                    modifier = Modifier.weight(2f)
+                    modifier = Modifier
+                        .weight(2f)
+                        .focusRequester(hostFocus)
                 )
                 OutlinedTextField(
                     value = port,
@@ -108,6 +171,12 @@ fun ConnectionScreen(
                     isError = port.isNotEmpty() && !portValid,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f)
+                )
+            }
+            if (mode == SrtMode.LISTENER && deviceIp != null) {
+                HelperText(
+                    "Point the sender at this device → $deviceIp" +
+                    (port.toIntOrNull()?.let { ":$it" } ?: "")
                 )
             }
             OutlinedTextField(
@@ -131,7 +200,7 @@ fun ConnectionScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedButton(
+                FocusableOutlinedButton(
                     onClick = { applyLatency(latencyMs - 1) },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
                     modifier = Modifier.size(44.dp)
@@ -150,7 +219,7 @@ fun ConnectionScreen(
                     modifier = Modifier.weight(1f)
                 )
 
-                OutlinedButton(
+                FocusableOutlinedButton(
                     onClick = { applyLatency(latencyMs + 1) },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
                     modifier = Modifier.size(44.dp)
@@ -172,7 +241,7 @@ fun ConnectionScreen(
         Section("Bandwidth limit") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MaxBwMode.values().forEach { m ->
-                    FilterChip(
+                    FocusableFilterChip(
                         selected = m == maxBwMode,
                         onClick = { maxBwMode = m },
                         label = {
@@ -238,7 +307,7 @@ fun ConnectionScreen(
                         24 to "AES-192",
                         32 to "AES-256"
                     ).forEach { (len, label) ->
-                        FilterChip(
+                        FocusableFilterChip(
                             selected = len == pbkeyLen,
                             onClick = { pbkeyLen = len },
                             label = { Text(label) }
@@ -253,15 +322,19 @@ fun ConnectionScreen(
         }
 
         Spacer(Modifier.height(8.dp))
-        Button(
+        FocusableButton(
             onClick = {
-                if (!canConnect) return@Button
+                if (!canConnect) return@FocusableButton
+                val effectiveHost = if (mode == SrtMode.LISTENER && host.isBlank()) {
+                    "0.0.0.0"
+                } else host
                 onConnect(
                     ConnectionConfig(
-                        host = host,
+                        host = effectiveHost,
                         port = port.toInt(),
                         latencyMs = latencyMs,
                         streamId = streamId,
+                        mode = mode,
                         maxBwMode = maxBwMode,
                         maxBandwidthMbps = maxBwMbps.toInt(),
                         passphrase = passphrase,

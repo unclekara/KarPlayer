@@ -4,10 +4,13 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.media.AudioManager
+import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -28,10 +31,8 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,7 +46,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +97,18 @@ fun PlayerScreen(
     var locked by remember { mutableStateOf(false) }
     var fullscreen by remember { mutableStateOf(true) }
     var hud by remember { mutableStateOf<HudState?>(null) }
+
+    val isTv = isTvDevice()
+    // Take focus on TV so the D-pad has something to act on. Also lets us
+    // intercept OK / Enter to toggle the stats overlay.
+    val rootFocus = remember { FocusRequester() }
+    LaunchedEffect(isTv) { if (isTv) rootFocus.requestFocus() }
+    // BACK on a remote (or phone) should leave the player cleanly. If the
+    // overlay is locked we eat the press once and unlock instead, mirroring
+    // the long-press-to-unlock gesture on touch.
+    BackHandler {
+        if (locked) locked = false else onDisconnect()
+    }
 
     val ctx = LocalContext.current
     val activity = remember(ctx) { ctx.findActivity() }
@@ -175,41 +193,61 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Gesture surface — tap toggles overlay; vertical drag adjusts
-        // brightness (left half) or volume (right half). Long-press unlocks.
+        // Gesture surface. On phones: tap toggles overlay; vertical drag on
+        // left half adjusts brightness, right half adjusts volume; long-press
+        // unlocks. On TV: D-pad CENTER toggles overlay (brightness/volume on
+        // a TV are owned by the system / remote, swipes are meaningless
+        // without touch). Modifiers are no-ops in their off-platform case but
+        // we skip the touch-only ones on TV to keep the surface lean.
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .focusRequester(rootFocus)
+                .focusable()
+                .onKeyEvent { ev ->
+                    if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    when (ev.nativeKeyEvent.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            if (!locked) overlayVisible = !overlayVisible
+                            true
+                        }
+                        else -> false
+                    }
+                }
                 .pointerInput(locked) {
                     detectTapGestures(
                         onTap = { if (!locked) overlayVisible = !overlayVisible },
                         onLongPress = { if (locked) locked = false }
                     )
                 }
-                .pointerInput(locked) {
-                    if (locked) return@pointerInput
-                    detectVerticalDragGestures { change, dragAmount ->
-                        change.consume()
-                        val w = size.width.coerceAtLeast(1)
-                        val isLeft = change.position.x < w / 2f
-                        val delta = -dragAmount / size.height.coerceAtLeast(1).toFloat()
-                        if (isLeft) {
-                            brightnessLevel = (brightnessLevel + delta).coerceIn(0.05f, 1f)
-                            activity?.window?.attributes = activity?.window?.attributes?.apply {
-                                screenBrightness = brightnessLevel
+                .then(
+                    if (isTv) Modifier else Modifier.pointerInput(locked) {
+                        if (locked) return@pointerInput
+                        detectVerticalDragGestures { change, dragAmount ->
+                            change.consume()
+                            val w = size.width.coerceAtLeast(1)
+                            val isLeft = change.position.x < w / 2f
+                            val delta = -dragAmount / size.height.coerceAtLeast(1).toFloat()
+                            if (isLeft) {
+                                brightnessLevel = (brightnessLevel + delta).coerceIn(0.05f, 1f)
+                                activity?.window?.attributes = activity?.window?.attributes?.apply {
+                                    screenBrightness = brightnessLevel
+                                }
+                                hud = HudState(HudKind.BRIGHTNESS, brightnessLevel)
+                            } else {
+                                volumeLevel = (volumeLevel + delta).coerceIn(0f, 1f)
+                                audioManager.setStreamVolume(
+                                    AudioManager.STREAM_MUSIC,
+                                    (volumeLevel * maxVolume).toInt(),
+                                    0
+                                )
+                                hud = HudState(HudKind.VOLUME, volumeLevel)
                             }
-                            hud = HudState(HudKind.BRIGHTNESS, brightnessLevel)
-                        } else {
-                            volumeLevel = (volumeLevel + delta).coerceIn(0f, 1f)
-                            audioManager.setStreamVolume(
-                                AudioManager.STREAM_MUSIC,
-                                (volumeLevel * maxVolume).toInt(),
-                                0
-                            )
-                            hud = HudState(HudKind.VOLUME, volumeLevel)
                         }
                     }
-                }
+                )
         )
 
         DisposableEffect(Unit) {
@@ -246,7 +284,7 @@ fun PlayerScreen(
             ) {
                 Text(text = lastError ?: "Playback error", color = Color.Red)
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = onDisconnect) { Text("Back") }
+                FocusableButton(onClick = onDisconnect) { Text("Back") }
             }
         }
 
@@ -294,18 +332,22 @@ private fun BottomBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row {
-            IconButton(onClick = onLock) {
-                Icon(Icons.Filled.Lock, contentDescription = "Lock", tint = Color.White)
+            FocusableIconButton(onClick = onLock) {
+                Icon(
+                    imageVector = Icons.Filled.Lock,
+                    contentDescription = "Lock",
+                    tint = androidx.compose.material3.LocalContentColor.current
+                )
             }
-            IconButton(onClick = onToggleFullscreen) {
+            FocusableIconButton(onClick = onToggleFullscreen) {
                 Icon(
                     imageVector = if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
                     contentDescription = if (fullscreen) "Exit fullscreen" else "Enter fullscreen",
-                    tint = Color.White
+                    tint = androidx.compose.material3.LocalContentColor.current
                 )
             }
         }
-        Button(onClick = onDisconnect) { Text("Disconnect") }
+        FocusableButton(onClick = onDisconnect) { Text("Disconnect") }
     }
 }
 

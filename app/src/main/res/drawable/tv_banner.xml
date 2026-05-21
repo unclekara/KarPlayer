@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android TV banner — shown in the Leanback launcher at 320×180. The launcher
+  renders android:label as text below the banner, so we keep this purely
+  graphical. Centred composition: brand-blue background + the same retro
+  CRT motif as the launcher icon, rescaled to landscape.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- Background -->
+    <path android:fillColor="#FF0F4C81"
+        android:pathData="M0,0 L320,0 L320,180 L0,180 Z" />
+
+    <!-- ============ Retro TV centred ============
+         Drawn in a 200×140 area, x=60..260, y=20..160. -->
+
+    <!-- Antennae -->
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="4"
+        android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M150,72 L120,30" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M118,26 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="4"
+        android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M170,72 L200,30" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M202,26 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+
+    <!-- TV body -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M70,70 L250,70 Q258,70 258,78 L258,148 Q258,156 250,156 L70,156 Q62,156 62,148 L62,78 Q62,70 70,70 Z" />
+
+    <!-- Inner screen bezel -->
+    <path android:fillColor="#FF0F4C81"
+        android:pathData="M76,82 L232,82 Q237,82 237,87 L237,140 Q237,144 232,144 L76,144 Q72,144 72,140 L72,87 Q72,82 76,82 Z" />
+
+    <!-- SMPTE colour bars (7 vertical) inside the screen. Span x=76..237 (161 wide), y=82..134. Each ≈ 23. -->
+    <path android:fillColor="#FFC0C0C0" android:pathData="M76,82 L99,82 L99,134 L76,134 Z" />
+    <path android:fillColor="#FFC0C000" android:pathData="M99,82 L122,82 L122,134 L99,134 Z" />
+    <path android:fillColor="#FF00C0C0" android:pathData="M122,82 L145,82 L145,134 L122,134 Z" />
+    <path android:fillColor="#FF00C000" android:pathData="M145,82 L168,82 L168,134 L145,134 Z" />
+    <path android:fillColor="#FFC000C0" android:pathData="M168,82 L191,82 L191,134 L168,134 Z" />
+    <path android:fillColor="#FFC00000" android:pathData="M191,82 L214,82 L214,134 L191,134 Z" />
+    <path android:fillColor="#FF0000C0" android:pathData="M214,82 L237,82 L237,134 L214,134 Z" />
+
+    <!-- B/W reference strip -->
+    <path android:fillColor="#FF000000" android:pathData="M76,134 L156,134 L156,144 L76,144 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M156,134 L237,134 L237,144 L156,144 Z" />
+
+    <!-- Knobs on right edge -->
+    <path android:fillColor="#FF0F4C81"
+        android:pathData="M248,96 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+    <path android:fillColor="#FF0F4C81"
+        android:pathData="M248,116 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+
+    <!-- Stand legs -->
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="4"
+        android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M90,160 L80,170" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="4"
+        android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M230,160 L240,170" />
+</vector>

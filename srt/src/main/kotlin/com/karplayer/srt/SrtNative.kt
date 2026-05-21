@@ -14,6 +14,11 @@ internal object SrtNative {
 
     external fun nativeCreate(): Long
 
+    /**
+     * Returns the SRT socket handle to use for subsequent read/close, or a
+     * negative KP_ERR_* code on failure. In LISTENER mode the returned handle
+     * is the *accepted* peer socket (the listener handle is closed natively).
+     */
     external fun nativeConnect(
         handle: Long,
         host: String,
@@ -26,7 +31,7 @@ internal object SrtNative {
         timeoutMs: Int,
         passphrase: String,
         pbkeylen: Int
-    ): Int
+    ): Long
 
     external fun nativeRead(handle: Long, buffer: ByteArray, offset: Int, length: Int): Int
     external fun nativeClose(handle: Long)

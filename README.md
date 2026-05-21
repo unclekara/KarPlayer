@@ -18,7 +18,11 @@ TSBPD latency, bandwidth cap, and stream-ID are all wired through.
 
 ## Features
 
-- Caller-mode SRT connect (listener / rendezvous stubbed in JNI; not exposed in UI yet)
+- **Caller, Listener, Rendezvous** modes — pick the one that matches your sender
+  - Caller: we initiate to the sender's address
+  - Listener: we bind a local port and wait for the sender to connect to us
+    (UI shows the device's LAN IP so you know where to point the sender)
+  - Rendezvous: symmetric NAT-traversal handshake
 - Adjustable receiver latency (slider 20–1000 ms, manual input up to 8000 ms)
 - AES-128/192/256 passphrase support, key-length selectable
 - Live stats overlay: RTT, bitrate, packet loss (colour-coded), jitter, retx count
@@ -109,8 +113,7 @@ rm -rf srt/.cxx/Debug/*/srt-ep srt/.cxx/Debug/*/mbedtls-ep
 
 ## Test it with FFmpeg
 
-If you don't have vMix or another SRT source, launch a local SRT listener
-that publishes a test pattern:
+### App as Caller (sender is the listener)
 
 ```bash
 ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 \
@@ -120,7 +123,23 @@ ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 \
        -f mpegts "srt://0.0.0.0:9000?mode=listener&latency=120"
 ```
 
-Then in the app: host = your machine's LAN IP, port = 9000, latency = 120.
+In the app: Mode = **Caller**, Host = your machine's LAN IP, Port = 9000,
+Latency = 120.
+
+### App as Listener (sender connects to us)
+
+```bash
+ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 \
+       -f lavfi -i sine=frequency=440 \
+       -c:v libx264 -preset ultrafast -tune zerolatency \
+       -c:a aac \
+       -f mpegts "srt://<phone-ip>:9000?mode=caller&latency=120"
+```
+
+In the app: Mode = **Listener**, leave Host empty (binds 0.0.0.0), Port = 9000.
+The ConnectionScreen shows the phone's LAN IP under the host field — point
+the sender at it. This is the right configuration for production setups
+like vMix, where the encoder pushes to the phone.
 
 ## Architecture notes
 
@@ -141,7 +160,9 @@ Then in the app: host = your machine's LAN IP, port = 9000, latency = 120.
 
 ## Known limitations / future work
 
-- **Caller mode only** in UI; listener / rendezvous wired in JNI but not exposed.
+- **No Android TV launcher integration yet** — leanback uses-feature,
+  `LEANBACK_LAUNCHER` intent filter, banner, and D-pad-first focus order
+  are all pending. Sideloading and using with a phone or touch screen works.
 - **No PiP / background audio** when the app is minimised — current behaviour
   drops the SRT socket and reconnects on resume.
 - **No stream recording** (writing the received MPEG-TS to disk).

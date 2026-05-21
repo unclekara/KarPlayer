@@ -36,14 +36,14 @@ class PlayerManager(context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.Main.immediate)
 
-    val player: ExoPlayer = ExoPlayer.Builder(context)
+    val player: ExoPlayer = ExoPlayer.Builder(context, LowLatencyRenderersFactory(context))
         .setLoadControl(
             DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
                     /* minBufferMs = */ 100,
                     /* maxBufferMs = */ 1500,
-                    /* bufferForPlaybackMs = */ 50,
-                    /* bufferForPlaybackAfterRebufferMs = */ 100
+                    /* bufferForPlaybackMs = */ 0,
+                    /* bufferForPlaybackAfterRebufferMs = */ 50
                 )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
@@ -157,21 +157,23 @@ class PlayerManager(context: Context) {
         _reconnectAttempt.value = 0
     }
 
-    /** Called by UI on Lifecycle.Event.ON_RESUME. If we have a stale session
-     *  that died while the app was in background, kick a reconnect now. */
+    /** Called by UI on Lifecycle.Event.ON_RESUME.
+     *
+     *  We always force a full restart of the SRT session — both when it died
+     *  silently in the background and when it kept running. For a live stream
+     *  the latter case is actually worse: the SRT receiver buffer keeps
+     *  filling, the video sink was detached, and on resume the player would
+     *  resume from the stale buffered position, accumulating latency every
+     *  time the user backgrounds the app. Reconnecting drops everything and
+     *  jumps back to the live edge. */
     fun onAppResumed() {
         val ep = lastEndpoint ?: return
         if (!autoReconnectEnabled) return
-        when (_state.value) {
-            PlayerState.ERROR, PlayerState.IDLE, PlayerState.RECONNECTING -> {
-                cancelReconnect()
-                _reconnectAttempt.value = (_reconnectAttempt.value + 1).coerceAtLeast(1)
-                _state.value = PlayerState.RECONNECTING
-                teardownCurrentSession()
-                startSession(ep)
-            }
-            else -> Unit
-        }
+        cancelReconnect()
+        teardownCurrentSession()
+        _state.value = PlayerState.CONNECTING
+        _reconnectAttempt.value = 0
+        startSession(ep)
     }
 
     fun setSurface(surface: Surface?) {
