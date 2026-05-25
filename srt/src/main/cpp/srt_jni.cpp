@@ -182,7 +182,12 @@ Java_com_karplayer_srt_SrtNative_nativeConnect(
                  srt_getlasterror_str(), rej, rejStr ? rejStr : "?");
             return KP_ERR_CONNECT;
         }
-        LOGI("SRT connected (caller, port=%d latency=%dms)", port, latencyMs);
+        int actualRcv = 0, actualPeer = 0, optSize = sizeof(int);
+        srt_getsockflag(s, SRTO_RCVLATENCY,  &actualRcv,  &optSize);
+        optSize = sizeof(int);
+        srt_getsockflag(s, SRTO_PEERLATENCY, &actualPeer, &optSize);
+        LOGI("SRT connected (caller, port=%d configured=%dms RCVLATENCY=%dms PEERLATENCY=%dms)",
+             port, latencyMs, actualRcv, actualPeer);
         return static_cast<jlong>(s);
     } else if (mode == 1) { // LISTENER
         if (srt_bind(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) < 0) {

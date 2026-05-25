@@ -67,6 +67,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import com.karplayer.player.MediaInfo
 import com.karplayer.player.PlayerState
+import com.karplayer.player.PlayerSyncController
 import com.karplayer.srt.SrtStats
 import kotlinx.coroutines.delay
 
@@ -84,6 +85,8 @@ fun PlayerScreen(
     val lastError by viewModel.lastError.collectAsState()
     val reconnectAttempt by viewModel.reconnectAttempt.collectAsState()
     val isInPip by viewModel.isInPip.collectAsState()
+    val syncState by viewModel.syncState.collectAsState()
+    val syncLagMs by viewModel.measuredLagMs.collectAsState()
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -307,6 +310,17 @@ fun PlayerScreen(
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
+            // Live SEI-sync indicator (top-right). Visible only when the
+            // user picked SyncMode.SEI_SYNC on connect — PlayerManager
+            // leaves syncState null otherwise.
+            syncState?.let { s ->
+                SyncIndicator(
+                    state = s,
+                    lagMs = syncLagMs,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+                )
+            }
+
             BottomBar(
                 fullscreen = fullscreen,
                 onToggleFullscreen = { fullscreen = !fullscreen },
@@ -449,4 +463,57 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+@Composable
+private fun SyncIndicator(
+    state: PlayerSyncController.State,
+    lagMs: Long?,
+    modifier: Modifier = Modifier
+) {
+    val label: String
+    val color: Color
+    when (state) {
+        PlayerSyncController.State.LOCKED -> {
+            label = "LOCKED"
+            color = Color(0xFF9BE39B)
+        }
+        PlayerSyncController.State.CATCHING_UP -> {
+            label = "CATCHING UP"
+            color = Color(0xFFFFD166)
+        }
+        PlayerSyncController.State.SLOWING_DOWN -> {
+            label = "SLOWING DOWN"
+            color = Color(0xFFFFD166)
+        }
+        PlayerSyncController.State.NO_SEI -> {
+            label = "NO SEI"
+            color = Color.White.copy(alpha = 0.5f)
+        }
+    }
+    Row(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (lagMs != null && state != PlayerSyncController.State.NO_SEI) {
+            Text(
+                text = "Lag: ${lagMs}ms",
+                color = Color.White,
+                fontSize = 11.sp
+            )
+            Text(
+                text = "  ·  ",
+                color = Color.White.copy(alpha = 0.4f),
+                fontSize = 11.sp
+            )
+        }
+        Text(
+            text = label,
+            color = color,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
 }

@@ -23,6 +23,12 @@ local.properties
 /logcat_live.txt
 /logcat_dump.txt
 
+# Kotlin compiler scratch state, e.g. .kotlin/sessions
+.kotlin/
+
+# Working-copy spec snapshots / scratch markdown
+*.md.local
+
 # Original spec (kept locally, not in repo)
 /KarPlayer_TZ.md
 

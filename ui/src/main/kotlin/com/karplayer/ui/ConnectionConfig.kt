@@ -12,6 +12,14 @@ import com.karplayer.srt.SrtOptions
  */
 enum class MaxBwMode { AUTO, UNLIM, FIXED }
 
+/**
+ * SyncMode:
+ *   OFF         → legacy behaviour, large buffer, no speed control
+ *   LOW_LATENCY → smaller ExoPlayer buffer + live-edge speed control
+ *   SEI_SYNC    → frame-accurate sync to KarRelay wall-clock SEI marks
+ */
+enum class SyncMode { OFF, LOW_LATENCY, SEI_SYNC }
+
 data class ConnectionConfig(
     val host: String = "",
     val port: Int = 9000,
@@ -22,7 +30,12 @@ data class ConnectionConfig(
     val maxBandwidthMbps: Int = 50,
     val passphrase: String = "",
     val pbkeyLen: Int = 0,
-    val useSoftwareDecoder: Boolean = false
+    val useSoftwareDecoder: Boolean = false,
+    val syncMode: SyncMode = SyncMode.OFF,
+    val maxBufferMs: Int = 400,         // used when syncMode = LOW_LATENCY
+    val targetLagMs: Int = 250,         // used when syncMode = SEI_SYNC
+    val syncDeadbandMs: Int = 50,       // SEI_SYNC speed deadband
+    val maxSpeedAdjustPct: Int = 5      // SEI_SYNC max speed deviation, 0..50
 ) {
     fun toSrtOptions(): SrtOptions = SrtOptions(
         latency = latencyMs,
@@ -50,6 +63,11 @@ object ConnectionConfigStore {
     private const val KEY_PASSPHRASE = "passphrase"
     private const val KEY_PBKEYLEN = "pbkeylen"
     private const val KEY_SOFTWARE_DECODER = "software_decoder"
+    private const val KEY_SYNC_MODE = "sync_mode"
+    private const val KEY_MAX_BUFFER_MS = "max_buffer_ms"
+    private const val KEY_TARGET_LAG_MS = "target_lag_ms"
+    private const val KEY_SYNC_DEADBAND_MS = "sync_deadband_ms"
+    private const val KEY_MAX_SPEED_ADJUST_PCT = "max_speed_adjust_pct"
 
     fun load(context: Context): ConnectionConfig {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -67,7 +85,14 @@ object ConnectionConfigStore {
             maxBandwidthMbps = p.getInt(KEY_MAXBW_MBPS, 50),
             passphrase = p.getString(KEY_PASSPHRASE, "") ?: "",
             pbkeyLen = p.getInt(KEY_PBKEYLEN, 0),
-            useSoftwareDecoder = p.getBoolean(KEY_SOFTWARE_DECODER, false)
+            useSoftwareDecoder = p.getBoolean(KEY_SOFTWARE_DECODER, false),
+            syncMode = runCatching {
+                SyncMode.valueOf(p.getString(KEY_SYNC_MODE, SyncMode.OFF.name)!!)
+            }.getOrDefault(SyncMode.OFF),
+            maxBufferMs = p.getInt(KEY_MAX_BUFFER_MS, 400),
+            targetLagMs = p.getInt(KEY_TARGET_LAG_MS, 250),
+            syncDeadbandMs = p.getInt(KEY_SYNC_DEADBAND_MS, 50),
+            maxSpeedAdjustPct = p.getInt(KEY_MAX_SPEED_ADJUST_PCT, 5)
         )
     }
 
@@ -83,6 +108,11 @@ object ConnectionConfigStore {
             putString(KEY_PASSPHRASE, cfg.passphrase)
             putInt(KEY_PBKEYLEN, cfg.pbkeyLen)
             putBoolean(KEY_SOFTWARE_DECODER, cfg.useSoftwareDecoder)
+            putString(KEY_SYNC_MODE, cfg.syncMode.name)
+            putInt(KEY_MAX_BUFFER_MS, cfg.maxBufferMs)
+            putInt(KEY_TARGET_LAG_MS, cfg.targetLagMs)
+            putInt(KEY_SYNC_DEADBAND_MS, cfg.syncDeadbandMs)
+            putInt(KEY_MAX_SPEED_ADJUST_PCT, cfg.maxSpeedAdjustPct)
             apply()
         }
     }

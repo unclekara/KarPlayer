@@ -57,6 +57,11 @@ fun ConnectionScreen(
     var passphrase by remember { mutableStateOf(initial.passphrase) }
     var pbkeyLen by remember { mutableStateOf(initial.pbkeyLen) }
     var useSoftwareDecoder by remember { mutableStateOf(initial.useSoftwareDecoder) }
+    var syncMode by remember { mutableStateOf(initial.syncMode) }
+    var maxBufferMs by remember { mutableStateOf(initial.maxBufferMs.toFloat()) }
+    var targetLagMs by remember { mutableStateOf(initial.targetLagMs.toFloat()) }
+    var syncDeadbandMs by remember { mutableStateOf(initial.syncDeadbandMs.toFloat()) }
+    var maxSpeedAdjustPct by remember { mutableStateOf(initial.maxSpeedAdjustPct.toFloat()) }
 
     val deviceIp = remember { findLocalIPv4() }
     val isTv = isTvDevice()
@@ -316,6 +321,91 @@ fun ConnectionScreen(
             }
         }
 
+        Section("Sync mode") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SyncMode.values().forEach { m ->
+                    FocusableFilterChip(
+                        selected = m == syncMode,
+                        onClick = { syncMode = m },
+                        label = {
+                            Text(
+                                when (m) {
+                                    SyncMode.OFF -> "Off"
+                                    SyncMode.LOW_LATENCY -> "Low-latency"
+                                    SyncMode.SEI_SYNC -> "SEI sync"
+                                }
+                            )
+                        }
+                    )
+                }
+            }
+            HelperText(
+                when (syncMode) {
+                    SyncMode.OFF -> "Default ExoPlayer behaviour. Largest " +
+                            "buffer, no playback-speed regulation. Use when " +
+                            "lag isn't critical."
+                    SyncMode.LOW_LATENCY -> "Smaller ExoPlayer buffer ceiling " +
+                            "for live playback. Total lag drops, but more " +
+                            "sensitive to network jitter."
+                    SyncMode.SEI_SYNC -> "Frame-accurate sync to KarRelay " +
+                            "wall-clock SEI marks. Multiple KarPlayer devices " +
+                            "on the same stream converge to the same lag and " +
+                            "play the same frame at the same time. Requires " +
+                            "SEI inject enabled on the relay."
+                }
+            )
+
+            if (syncMode == SyncMode.LOW_LATENCY) {
+                LabeledValue("Max buffer", "${maxBufferMs.toInt()} ms")
+                Slider(
+                    value = maxBufferMs.coerceIn(150f, 2000f),
+                    onValueChange = { maxBufferMs = it },
+                    valueRange = 150f..2000f
+                )
+                HelperText(
+                    "ExoPlayer's `maxBufferMs`. Lower = less lag, more " +
+                    "rebuffer risk on jittery networks."
+                )
+            }
+
+            if (syncMode == SyncMode.SEI_SYNC) {
+                LabeledValue("Target lag", "${targetLagMs.toInt()} ms")
+                Slider(
+                    value = targetLagMs.coerceIn(100f, 2000f),
+                    onValueChange = { targetLagMs = it },
+                    valueRange = 100f..2000f
+                )
+                HelperText(
+                    "Lag from relay wall-clock all KarPlayer clients " +
+                    "converge to. Pick a value above your worst-case " +
+                    "network jitter."
+                )
+
+                LabeledValue("Deadband", "${syncDeadbandMs.toInt()} ms")
+                Slider(
+                    value = syncDeadbandMs.coerceIn(10f, 200f),
+                    onValueChange = { syncDeadbandMs = it },
+                    valueRange = 10f..200f
+                )
+                HelperText(
+                    "Don't adjust speed when current lag is within ± this of " +
+                    "the target. Prevents oscillation around the set-point."
+                )
+
+                LabeledValue("Max speed adjust", "${maxSpeedAdjustPct.toInt()} %")
+                Slider(
+                    value = maxSpeedAdjustPct.coerceIn(1f, 20f),
+                    onValueChange = { maxSpeedAdjustPct = it },
+                    valueRange = 1f..20f
+                )
+                HelperText(
+                    "Cap on how far the playback speed can deviate from " +
+                    "1.0× to chase the target. 5 % is usually inaudible; " +
+                    "higher converges faster but is more noticeable on audio."
+                )
+            }
+        }
+
         Section("Decoder") {
             FocusableSwitchRow(
                 label = "Use software decoder",
@@ -349,7 +439,12 @@ fun ConnectionScreen(
                         maxBandwidthMbps = maxBwMbps.toInt(),
                         passphrase = passphrase,
                         pbkeyLen = pbkeyLen,
-                        useSoftwareDecoder = useSoftwareDecoder
+                        useSoftwareDecoder = useSoftwareDecoder,
+                        syncMode = syncMode,
+                        maxBufferMs = maxBufferMs.toInt(),
+                        targetLagMs = targetLagMs.toInt(),
+                        syncDeadbandMs = syncDeadbandMs.toInt(),
+                        maxSpeedAdjustPct = maxSpeedAdjustPct.toInt()
                     )
                 )
             },
