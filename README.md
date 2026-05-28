@@ -1,4 +1,4 @@
-# KarPlayer SRT
+# KarPlayer - SRT Receiver for Android devices
 
 Low-latency Android receiver for live MPEG-TS over [SRT](https://github.com/Haivision/srt).
 Built for professional live production: handshake, decode, surface — minimum
