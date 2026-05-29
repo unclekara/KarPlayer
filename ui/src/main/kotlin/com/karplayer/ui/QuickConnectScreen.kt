@@ -55,7 +55,8 @@ import com.karplayer.srt.SrtMode
 fun QuickConnectScreen(
     config: ConnectionConfig,
     onConnect: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    lastError: String? = null
 ) {
     var showAbout by remember { mutableStateOf(false) }
     if (showAbout) AboutDialog(onDismiss = { showAbout = false })
@@ -111,6 +112,20 @@ fun QuickConnectScreen(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 32.sp
             )
+
+            if (!lastError.isNullOrBlank()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF3A1414)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = lastError,
+                        color = Color(0xFFFF6B6B),
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
+            }
 
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),

@@ -13,6 +13,30 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * Thrown when the SRT handshake is refused by the peer. [rejectReason]
+ * is the libsrt rejection code (SRT_REJ / SRT_REJX, see [SrtNative]);
+ * 0 if the connect failed for a non-handshake reason (timeout, host
+ * unreachable).
+ */
+class SrtConnectException(
+    val rejectReason: Int,
+    message: String,
+) : IOException(message) {
+    /** True if the handshake was refused because the stream id is not
+     *  allowed for the source (SRT_REJX_FORBIDDEN). */
+    val isWrongStreamId: Boolean get() = rejectReason == REJX_FORBIDDEN
+
+    /** True if the relay refused due to its free-tier viewer cap
+     *  (SRT_REJX_OVERLOAD). */
+    val isViewerLimit: Boolean get() = rejectReason == REJX_OVERLOAD
+
+    companion object {
+        const val REJX_OVERLOAD = 1402
+        const val REJX_FORBIDDEN = 1403
+    }
+}
+
 class SrtSocket {
 
     private val handle = AtomicLong(INVALID)
@@ -58,8 +82,12 @@ class SrtSocket {
         // use (same as `h` for caller/rendezvous, the accepted-peer handle
         // for listener — the listener socket itself is closed natively).
         if (result < 0) {
+            val rej = SrtNative.nativeLastRejectReason()
             SrtNative.nativeClose(h)
-            throw IOException("SRT connect failed rc=$result host=$host:$port mode=${options.mode}")
+            throw SrtConnectException(
+                rejectReason = rej,
+                message = "SRT connect failed rc=$result rej=$rej host=$host:$port mode=${options.mode}",
+            )
         }
         handle.set(result)
         startStatsPolling()

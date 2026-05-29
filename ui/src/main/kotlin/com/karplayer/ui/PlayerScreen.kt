@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -48,7 +50,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
@@ -65,6 +71,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.ui.AspectRatioFrameLayout
+import com.karplayer.player.AudioTrack
 import com.karplayer.player.MediaInfo
 import com.karplayer.player.PlayerState
 import com.karplayer.player.PlayerSyncController
@@ -87,6 +94,9 @@ fun PlayerScreen(
     val isInPip by viewModel.isInPip.collectAsState()
     val syncState by viewModel.syncState.collectAsState()
     val syncLagMs by viewModel.measuredLagMs.collectAsState()
+    val audioTracks by viewModel.audioTracks.collectAsState()
+    val selectedAudioTrackId by viewModel.selectedAudioTrackId.collectAsState()
+    var audioPickerVisible by remember { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -95,6 +105,12 @@ fun PlayerScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // The player gave up reconnecting → return to the connection menu.
+    // The reason text remains in lastError and is shown there.
+    LaunchedEffect(Unit) {
+        viewModel.exitToMenu.collect { onDisconnect() }
     }
 
     var overlayVisible by remember { mutableStateOf(true) }
@@ -307,6 +323,7 @@ fun PlayerScreen(
             StatsOverlay(
                 stats = stats,
                 media = media,
+                audioTrackCount = audioTracks.size,
                 modifier = Modifier.align(Alignment.TopCenter)
             )
 
@@ -326,9 +343,52 @@ fun PlayerScreen(
                 onToggleFullscreen = { fullscreen = !fullscreen },
                 onLock = { locked = true },
                 onDisconnect = onDisconnect,
+                onAudio = if (audioTracks.size >= 2) ({ audioPickerVisible = true }) else null,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+
+        if (audioPickerVisible) {
+            AudioTrackPicker(
+                tracks = audioTracks,
+                selectedId = selectedAudioTrackId,
+                onPick = { id ->
+                    viewModel.selectAudio(id, ctx)
+                    audioPickerVisible = false
+                },
+                onDismiss = { audioPickerVisible = false },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+    }
+}
+
+/**
+ * Renders [icon] with a 1dp dark drop shadow behind a white foreground
+ * so the glyph stays readable on any video frame (black studio, white
+ * sky, mid-tone newsroom). Pattern matches YouTube / Netflix / Plex
+ * overlay chrome — minimal visual noise, maximum contrast.
+ */
+@Composable
+private fun ShadowedIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String?,
+) {
+    Box {
+        // Shadow pass: offset 1dp down-right, semi-transparent black.
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color.Black.copy(alpha = 0.55f),
+            modifier = Modifier.offset(x = 1.dp, y = 1.dp)
+        )
+        // Foreground pass: pure white, full opacity.
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = Color.White
+        )
     }
 }
 
@@ -338,6 +398,7 @@ private fun BottomBar(
     onToggleFullscreen: () -> Unit,
     onLock: () -> Unit,
     onDisconnect: () -> Unit,
+    onAudio: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -350,21 +411,103 @@ private fun BottomBar(
     ) {
         Row {
             FocusableIconButton(onClick = onLock) {
-                Icon(
-                    imageVector = Icons.Filled.Lock,
-                    contentDescription = "Lock",
-                    tint = androidx.compose.material3.LocalContentColor.current
-                )
+                ShadowedIcon(icon = Icons.Filled.Lock, contentDescription = "Lock")
             }
             FocusableIconButton(onClick = onToggleFullscreen) {
-                Icon(
-                    imageVector = if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                    contentDescription = if (fullscreen) "Exit fullscreen" else "Enter fullscreen",
-                    tint = androidx.compose.material3.LocalContentColor.current
+                ShadowedIcon(
+                    icon = if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                    contentDescription = if (fullscreen) "Exit fullscreen" else "Enter fullscreen"
                 )
+            }
+            if (onAudio != null) {
+                FocusableIconButton(onClick = onAudio) {
+                    ShadowedIcon(icon = Icons.Filled.MusicNote, contentDescription = "Audio track")
+                }
             }
         }
         FocusableButton(onClick = onDisconnect) { Text("Disconnect") }
+    }
+}
+
+/**
+ * Bottom-anchored audio-track picker. Each row shows label / language /
+ * codec. A pure-Compose implementation (no Material3 ModalBottomSheet)
+ * to keep behaviour identical on TV — ModalBottomSheet's focus model
+ * doesn't always play well with leanback D-pad navigation.
+ */
+@Composable
+private fun AudioTrackPicker(
+    tracks: List<AudioTrack>,
+    selectedId: String?,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.45f))
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { onDismiss() })
+            }
+    ) {
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .background(Color(0xCC101010), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures { /* swallow taps inside the sheet */ }
+                }
+        ) {
+            Text(
+                text = "Audio",
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            tracks.forEach { tr ->
+                AudioTrackRow(
+                    track = tr,
+                    isSelected = tr.id == selectedId,
+                    onClick = { onPick(tr.id) }
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            FocusableButton(onClick = onDismiss) { Text("Close") }
+        }
+    }
+}
+
+@Composable
+private fun AudioTrackRow(track: AudioTrack, isSelected: Boolean, onClick: () -> Unit) {
+    val primary = track.label?.takeIf { it.isNotBlank() }
+        ?: track.language?.takeIf { it.isNotBlank() }
+        ?: track.id
+    val meta = buildString {
+        track.language?.takeIf { it.isNotBlank() && it != primary }?.let { append(it.uppercase()) }
+        track.codec?.let { if (isNotEmpty()) append(" · "); append(it) }
+        if (track.channels > 0) { if (isNotEmpty()) append(" · "); append("${track.channels} ch") }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .pointerInput(track.id) {
+                detectTapGestures(onTap = { onClick() })
+            },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = if (isSelected) "● " else "○ ",
+            color = if (isSelected) Color.White else Color.LightGray
+        )
+        Column(modifier = Modifier.padding(start = 4.dp)) {
+            Text(text = primary, color = Color.White, fontWeight = FontWeight.Medium)
+            if (meta.isNotEmpty()) {
+                Text(text = meta, color = Color.LightGray, fontSize = 12.sp)
+            }
+        }
     }
 }
 
@@ -397,6 +540,7 @@ private fun HudBar(kind: HudKind, value: Float, modifier: Modifier = Modifier) {
 private fun StatsOverlay(
     stats: SrtStats,
     media: MediaInfo,
+    audioTrackCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val lossColor = when {
@@ -428,6 +572,11 @@ private fun StatsOverlay(
             append(media.audioCodec ?: "—")
             if (media.audioSampleRate > 0) append("  ").append(media.audioSampleRate).append(" Hz")
             if (media.audioChannels > 0) append("  ").append(media.audioChannels).append(" ch")
+            // Suffix with "× N" when the demuxer enumerated more than
+            // one audio track in the program — confirms the producer
+            // is sending separate PIDs (and the AUDIO picker should
+            // appear in the bottom bar).
+            if (audioTrackCount > 1) append("  × ").append(audioTrackCount).append(" tracks")
         }
         OverlayRow("Audio", audioLine)
 

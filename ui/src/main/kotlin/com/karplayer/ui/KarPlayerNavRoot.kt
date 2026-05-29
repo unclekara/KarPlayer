@@ -3,6 +3,7 @@ package com.karplayer.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,17 @@ fun KarPlayerNavRoot(playerManager: PlayerManager) {
     // flow that TV uses. Detail editing lives behind the Settings button.
     var screen by rememberSaveable { mutableStateOf(Screen.QUICK) }
 
+    val lastError by vm.lastError.collectAsState()
+
+    // Show the failure reason on the menu only briefly — a permanent
+    // banner would make the player feel like a crippled/limited build.
+    LaunchedEffect(lastError, screen) {
+        if (screen == Screen.QUICK && !lastError.isNullOrBlank()) {
+            kotlinx.coroutines.delay(8000)
+            vm.clearError()
+        }
+    }
+
     when (screen) {
         Screen.QUICK -> QuickConnectScreen(
             config = currentConfig,
@@ -35,7 +47,8 @@ fun KarPlayerNavRoot(playerManager: PlayerManager) {
                 vm.connect(currentConfig)
                 screen = Screen.PLAYER
             },
-            onSettings = { screen = Screen.SETTINGS }
+            onSettings = { screen = Screen.SETTINGS },
+            lastError = lastError
         )
         Screen.SETTINGS -> {
             // BACK from Settings always returns to QuickConnect now that it

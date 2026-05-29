@@ -1,8 +1,12 @@
 # KarPlayer - SRT Receiver for Android devices
 
-Low-latency Android receiver for live MPEG-TS over [SRT](https://github.com/Haivision/srt).
-Built for professional live production: handshake, decode, surface — minimum
+Low-latency Android receiver for live MPEG-TS over SRT. Built for
+professional live production: handshake, decode, surface — minimum
 moving parts, end-to-end target **< 200 ms on LAN**.
+
+[SRT](https://github.com/Haivision/srt) (Secure Reliable Transport) is an
+open-source video transport protocol created and open-sourced by
+[Haivision](https://www.haivision.com/).
 
 - **libsrt 1.5.4** with AES encryption (via mbedtls 3.6.2), built from source per ABI
 - **Media3 / ExoPlayer 1.3.1** with MPEG-TS extractor and hardware H.264 / H.265 decode
@@ -12,37 +16,76 @@ moving parts, end-to-end target **< 200 ms on LAN**.
 
 ## Status
 
-Verified end-to-end against a vMix SRT listener (HEVC + AAC) on a Pixel 8.
-Encryption (passphrase / PBKEYLEN 128/192/256) works against vMix. Receiver-side
-TSBPD latency, bandwidth cap, and stream-ID are all wired through.
+Verified end-to-end against vMix (HEVC + AAC) and against the companion
+**[KarRelay](../KarRelay)** (SEI timecode sync, rejection reasons,
+operator kicks). Encryption (PBKEYLEN 128/192/256), receiver-side TSBPD
+latency, bandwidth cap, and stream-ID are all wired through. Runs on
+phones, tablets and Android TV / leanback launchers.
+
+Current version: **0.3** — see [CHANGELOG.md](CHANGELOG.md). For module
+layout and data flows see [ARCHITECTURE.md](ARCHITECTURE.md); for
+on-the-wire and inter-module contracts see [API.md](API.md).
 
 ## Features
 
+### Transport
 - **Caller, Listener, Rendezvous** modes — pick the one that matches your sender
-  - Caller: we initiate to the sender's address
-  - Listener: we bind a local port and wait for the sender to connect to us
-    (UI shows the device's LAN IP so you know where to point the sender)
-  - Rendezvous: symmetric NAT-traversal handshake
 - Adjustable receiver latency (slider 20–1000 ms, manual input up to 8000 ms)
-- AES-128/192/256 passphrase support, key-length selectable
+- AES-128/192/256 passphrase, key-length selectable
 - Live stats overlay: RTT, bitrate, packet loss (colour-coded), jitter, retx count
 - Codec / resolution / sample-rate readout from `Player.Listener.onTracksChanged`
-- Aspect-ratio auto-detect via `AspectRatioFrameLayout`
-- Auto-reconnect on network drops (exponential backoff 200 ms → 5 s, infinite retries)
-- Faster reconnect on Wi-Fi roaming / network swap via `ConnectivityManager.NetworkCallback`
-- Lifecycle-driven reconnect on app resume (skipped during PiP transitions)
-- **Picture-in-Picture** support — playback survives Home / Recents without
-  audio interruption
-- Proper **AudioFocus** integration (auto-pause on call / notification, ducking,
-  Bluetooth routing, Media-volume rocker)
-- **Wi-Fi performance lock** while a session is active to suppress radio
-  power-save jitter
-- **Software-decoder toggle** in settings — escape hatch when a buggy HW
-  decoder breaks playback. By default HW decode is used, but
-  `c2.exynos.avc.decoder` is automatically excluded on Pixel 8 / 9 to avoid
-  the known green-tearing / freeze bug on live MPEG-TS H.264
-- Immersive fullscreen, lock mode (long-press to unlock)
-- Swipe-to-adjust brightness (left half) and volume (right half)
+- Aspect-ratio auto-detect
+
+### Sync modes
+- **OFF** — plain playback at the negotiated latency.
+- **LOW_LATENCY** — speed-nudge live-edge chaser (1.03× / 1.06×) without
+  `seekTo()` (which would reset the SRT loader).
+- **SEI_SYNC** — frame-accurate lock to the relay's timeline using a
+  `KarSEI-TSYNC` SEI carried in the TS. NTP-style HTTP clock-sync to the
+  relay aligns phone↔relay clocks first; the controller then holds a
+  user-configurable target lag via small speed adjustments.
+  Requires a Pro-licensed KarRelay to emit TSYNC.
+
+### Resilience
+- **Bounded auto-reconnect** (3 attempts, exponential backoff). After three
+  failures the player returns to the connection menu; the reason is shown
+  briefly (auto-dismissed) so the app never looks "limited".
+- **Connection-rejection reasons** surfaced from SRT and from a relay HTTP
+  side-channel: *wrong stream id* (`SRT_REJX_FORBIDDEN`), *viewer limit*
+  (`SRT_REJX_OVERLOAD`), *operator kick* (`/api/disconnect-reason`).
+- Faster reconnect on Wi-Fi roaming via `ConnectivityManager.NetworkCallback`.
+- Lifecycle-driven reconnect on resume (skipped during PiP transitions).
+
+### Platform
+- **Picture-in-Picture** — playback survives Home / Recents.
+- **AudioFocus** integration (auto-pause on call, ducking, BT routing,
+  Media-volume rocker).
+- **Wi-Fi performance lock** during a session.
+- **Software-decoder toggle**; `c2.exynos.avc.decoder` auto-excluded on
+  Pixel 8/9 to dodge the green-tearing/freeze bug on live H.264.
+- **Android TV / leanback launcher**, D-pad-first focus order, no IME spam.
+- Immersive fullscreen, lock mode (long-press), swipe brightness / volume.
+
+## Configuration
+
+All settings live in the in-app **Settings** screen and are persisted
+across launches (`SharedPreferences` — see `ConnectionConfig`).
+
+| Setting             | Default       | Notes                                                          |
+|---------------------|---------------|----------------------------------------------------------------|
+| Mode                | Caller        | Caller / Listener / Rendezvous                                 |
+| Host                | —             | Required in Caller / Rendezvous mode                           |
+| Port                | —             | SRT UDP port                                                   |
+| Stream ID           | (empty)       | Optional, sender-defined                                       |
+| Relay service port  | **8484**      | KarRelay's web/HTTP port — used for clock sync and the disconnect-reason channel. Must match `web_port` in the relay |
+| Receiver latency    | 120 ms        | Slider 20–1000 ms, manual up to 8000 ms                        |
+| Bandwidth limit     | Auto          | Optional fixed cap (Mbps)                                      |
+| Passphrase / PBKEYLEN | (empty)     | AES-128 / 192 / 256                                            |
+| Sync mode           | OFF           | OFF / LOW_LATENCY / SEI_SYNC                                   |
+| Software decoder    | Off (auto-on on buggy HW) | Manual override for the HW decoder            |
+
+The relay service port default changed from 8080 to 8484 in 0.3 — see
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Repository layout
 
@@ -154,30 +197,26 @@ like vMix, where the encoder pushes to the phone.
 
 ## Architecture notes
 
-- **`SrtDataSource` ↔ ExoPlayer**: SRT live mode delivers fixed-size payloads
-  (1316 bytes by default). Media3 extractors call `DataSource.read` with
-  arbitrary lengths (down to a few bytes during track sniffing). We absorb
-  that mismatch with an internal `rxBuf` in `SrtSocket.kt`: each underlying
-  `srt_recv` pulls a full message; the caller is served incrementally.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full module breakdown. The
+non-obvious bits worth highlighting here:
+
+- **`SrtDataSource` ↔ ExoPlayer**: SRT live mode delivers fixed 1316-byte
+  payloads; Media3 extractors read arbitrary lengths. An internal `rxBuf`
+  in `SrtSocket.kt` absorbs the mismatch.
 - **TRANSTYPE first**: `SRTO_TRANSTYPE = SRTT_LIVE` is set before any other
-  option per the libsrt configuration guidelines — it bulk-presets
-  `MESSAGEAPI`, `TSBPDMODE`, `TLPKTDROP`, and `PAYLOADSIZE`.
+  option (bulk-presets MESSAGEAPI / TSBPDMODE / TLPKTDROP / PAYLOADSIZE).
+- **Reconnect**: bounded to 3 attempts. Success = reaching `PLAYING`
+  (`BUFFERING` doesn't count — it appears immediately after `prepare()`
+  and would otherwise mask a failing attempt).
 - **State race fix**: ExoPlayer's `STATE_IDLE` event from `player.stop()`
-  during `disconnect()` is ignored while we're in `CONNECTING` /
-  `RECONNECTING`, otherwise it would clobber the new attempt.
-- **16 KB alignment**: All native `.so` files are linked with
-  `-Wl,-z,max-page-size=16384` (applied via `CMAKE_SHARED_LINKER_FLAGS`
-  to both libsrt's and our own JNI library).
+  during `disconnect()` is ignored while `CONNECTING`/`RECONNECTING`.
+- **16 KB alignment**: native `.so` linked with `-Wl,-z,max-page-size=16384`
+  for Android 15+.
 
 ## Known limitations / future work
 
-- **No Android TV launcher integration yet** — leanback uses-feature,
-  `LEANBACK_LAUNCHER` intent filter, banner, and D-pad-first focus order
-  are all pending. Sideloading and using with a phone or touch screen works.
-- **No PiP / background audio** when the app is minimised — current behaviour
-  drops the SRT socket and reconnects on resume.
 - **No stream recording** (writing the received MPEG-TS to disk).
-- **No multipath / bonding** on RX (libsrt bonding is compiled in but not used).
+- **No multipath / bonding** on RX (libsrt bonding is compiled in but unused).
 - **`pktRcvRetransTotal`** is unavailable in this libsrt minor — we report
   the sender-side counter (`pktRetransTotal`) as a stand-in.
 - **Jitter** in the overlay is a proxy (`msRcvBuf` from `SRT_TRACEBSTATS`);

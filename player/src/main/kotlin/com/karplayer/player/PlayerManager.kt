@@ -16,10 +16,12 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import com.karplayer.srt.SrtConnectException
 import com.karplayer.srt.SrtDataSource
 import com.karplayer.srt.SrtOptions
 import com.karplayer.srt.SrtStats
@@ -28,8 +30,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -83,8 +88,29 @@ class PlayerManager(context: Context) {
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
+    // Emitted when the player gives up (reconnects exhausted) and the UI
+    // should return to the connection menu. The payload is the reason
+    // text to surface there.
+    private val _exitToMenu = MutableSharedFlow<String?>(extraBufferCapacity = 1)
+    val exitToMenu: SharedFlow<String?> = _exitToMenu.asSharedFlow()
+
     private val _mediaInfo = MutableStateFlow(MediaInfo())
     val mediaInfo: StateFlow<MediaInfo> = _mediaInfo.asStateFlow()
+
+    private val _audioTracks = MutableStateFlow<List<AudioTrack>>(emptyList())
+    val audioTracks: StateFlow<List<AudioTrack>> = _audioTracks.asStateFlow()
+
+    private val _selectedAudioTrackId = MutableStateFlow<String?>(null)
+    val selectedAudioTrackId: StateFlow<String?> = _selectedAudioTrackId.asStateFlow()
+
+    /** Most recent Tracks snapshot — needed to resolve the TrackGroup
+     *  reference when [selectAudio] is called. */
+    @Volatile private var lastTracks: Tracks? = null
+
+    /** User's preferred audio language (ISO-639 code) carried from
+     *  [ConnectionConfig]. Applied via [TrackSelectionParameters] on
+     *  every (re)build so a buffer-ceiling change doesn't drop it. */
+    @Volatile private var preferredAudioLanguage: String? = null
 
     private val _reconnectAttempt = MutableStateFlow(0)
     val reconnectAttempt: StateFlow<Int> = _reconnectAttempt.asStateFlow()
@@ -125,6 +151,8 @@ class PlayerManager(context: Context) {
 
     private var lastEndpoint: Endpoint? = null
     private var autoReconnectEnabled: Boolean = false
+    private var relayHttpPort: Int = 8484  // for the disconnect-reason side-channel
+    @Volatile private var errorEpoch: Int = 0  // bumped on every onPlayerError
 
     // Buffer / sync configuration of the last connect call. Used to decide
     // whether the ExoPlayer instance must be rebuilt before a new session
@@ -153,7 +181,22 @@ class PlayerManager(context: Context) {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            _lastError.value = error.message ?: error.errorCodeName
+            errorEpoch++  // lets an in-flight reconnect attempt detect this failure
+            // Set an initial message; a connect-time SRT rejection gives us
+            // a precise reason synchronously. Mid-session kicks surface as
+            // generic errors — scheduleReconnect refines the text from the
+            // relay's side-channel.
+            val rejectEx = findSrtConnectException(error)
+            _lastError.value = when {
+                rejectEx?.isWrongStreamId == true ->
+                    "Wrong stream ID — not allowed for this source."
+                rejectEx?.isViewerLimit == true ->
+                    "Relay free plan: max 3 viewers per source."
+                else -> error.message ?: error.errorCodeName
+            }
+
+            // Uniform policy: any error (network drop, kick, rejection) gets
+            // up to MAX_RECONNECT_ATTEMPTS retries, then we bail to the menu.
             if (autoReconnectEnabled && lastEndpoint != null) {
                 scheduleReconnect()
             } else {
@@ -162,27 +205,66 @@ class PlayerManager(context: Context) {
         }
 
         override fun onTracksChanged(tracks: Tracks) {
+            lastTracks = tracks
+
             var video: Format? = null
-            var audio: Format? = null
-            for (group in tracks.groups) {
-                if (!group.isSelected) continue
+            var selectedAudio: Format? = null
+            var selectedAudioId: String? = null
+            val audioList = mutableListOf<AudioTrack>()
+
+            for ((gi, group) in tracks.groups.withIndex()) {
                 for (i in 0 until group.length) {
-                    if (!group.isTrackSelected(i)) continue
                     val f = group.getTrackFormat(i)
-                    when {
-                        video == null && MimeTypes.isVideo(f.sampleMimeType) -> video = f
-                        audio == null && MimeTypes.isAudio(f.sampleMimeType) -> audio = f
+                    val mime = f.sampleMimeType
+                    if (MimeTypes.isVideo(mime) && group.isSelected && group.isTrackSelected(i) && video == null) {
+                        video = f
+                    }
+                    if (MimeTypes.isAudio(mime)) {
+                        val isSel = group.isSelected && group.isTrackSelected(i)
+                        val tid = "$gi-$i"
+                        audioList += AudioTrack(
+                            id = tid,
+                            language = f.language,
+                            label = f.label,
+                            codec = mime?.removePrefix("audio/")?.uppercase(),
+                            channels = f.channelCount,
+                            sampleRate = f.sampleRate,
+                            isSelected = isSel,
+                        )
+                        if (isSel) {
+                            selectedAudio = f
+                            selectedAudioId = tid
+                        }
                     }
                 }
             }
+            _audioTracks.value = audioList
+            _selectedAudioTrackId.value = selectedAudioId
+
+            // Debug: dump what the demuxer surfaced. Helps diagnose
+            // "I sent 4 audio tracks and only one plays" — most often
+            // the encoder (e.g., vMix in multi-channel mode) muxed all
+            // languages into a single multi-channel PID, so here we
+            // see audio=1 with channels=8 rather than audio=4.
+            val audioSummary = audioList.joinToString(", ") { t ->
+                "${t.id}:${t.codec ?: "?"}/${t.language ?: "—"}/${t.channels}ch" +
+                        if (t.isSelected) "[SEL]" else ""
+            }
+            Log.i(
+                TAG,
+                "tracks: video=${video?.sampleMimeType ?: "—"}" +
+                        "(${video?.width ?: 0}x${video?.height ?: 0}@${video?.frameRate ?: 0f}) " +
+                        "audio.count=${audioList.size} [$audioSummary]"
+            )
+
             _mediaInfo.value = _mediaInfo.value.copy(
                 videoCodec = video?.sampleMimeType?.removePrefix("video/")?.uppercase(),
                 videoWidth = video?.width ?: 0,
                 videoHeight = video?.height ?: 0,
                 videoFrameRate = video?.frameRate ?: 0f,
-                audioCodec = audio?.sampleMimeType?.removePrefix("audio/")?.uppercase(),
-                audioSampleRate = audio?.sampleRate ?: 0,
-                audioChannels = audio?.channelCount ?: 0
+                audioCodec = selectedAudio?.sampleMimeType?.removePrefix("audio/")?.uppercase(),
+                audioSampleRate = selectedAudio?.sampleRate ?: 0,
+                audioChannels = selectedAudio?.channelCount ?: 0
             )
         }
 
@@ -212,12 +294,15 @@ class PlayerManager(context: Context) {
         useSoftwareDecoder: Boolean = false,
         maxBufferMs: Int = 1500,
         seiSync: PlayerSyncController.SeiSyncConfig? = null,
-        liveEdgeTargetMs: Int = 0
+        liveEdgeTargetMs: Int = 0,
+        relayHttpPort: Int = 8484,
+        preferredAudioLanguage: String? = null,
     ) {
         Log.i(
             TAG,
             "connect: $host:$port maxBufferMs=$maxBufferMs " +
                     "seiSync=${seiSync != null} liveEdgeTargetMs=$liveEdgeTargetMs " +
+                    "relayHttpPort=$relayHttpPort " +
                     "srtLatency=${options.latency} sw=$useSoftwareDecoder"
         )
         cancelReconnect()
@@ -225,6 +310,7 @@ class PlayerManager(context: Context) {
         teardownCurrentSession()
         _state.value = PlayerState.CONNECTING
         lastEndpoint = Endpoint(host, port, options)
+        this.relayHttpPort = relayHttpPort
         autoReconnectEnabled = true
         this.useSoftwareDecoder = useSoftwareDecoder
         this.liveEdgeTargetMs = liveEdgeTargetMs
@@ -239,6 +325,14 @@ class PlayerManager(context: Context) {
             rebuildPlayer(maxBufferMs)
             currentMaxBufferMs = maxBufferMs
         }
+
+        // Apply the persisted audio-language preference on every connect
+        // so a stream rebuild (or a fresh session after disconnect) opens
+        // on the user's last choice. Track-list state is per-session,
+        // any prior in-session override resets to a clean default.
+        _audioTracks.value = emptyList()
+        _selectedAudioTrackId.value = null
+        setPreferredAudioLanguage(preferredAudioLanguage)
 
         // (Re)create the sync controller if the user enabled SEI_SYNC.
         teardownSyncController()
@@ -285,10 +379,79 @@ class PlayerManager(context: Context) {
         }
 
         if (createdSyncController != null) {
-            startSessionAfterClockSync(host, createdSyncController)
+            startSessionAfterClockSync(host, relayHttpPort, createdSyncController)
         } else {
             startSession()
         }
+    }
+
+    /** Clears the last error banner (the menu auto-dismisses it after a
+     *  few seconds so the player doesn't look permanently "limited"). */
+    fun clearError() {
+        _lastError.value = null
+    }
+
+    /**
+     * Picks the audio track identified by [trackId] (one of the ids in
+     * [audioTracks]). Returns the picked track's language (ISO-639), or
+     * null if the track has no language or the id is unknown. Callers
+     * persist the returned language so subsequent sessions open on the
+     * same track.
+     *
+     * The override applies immediately; ExoPlayer's selector seamlessly
+     * swaps the audio renderer's input without restarting the SRT
+     * connection.
+     */
+    fun selectAudio(trackId: String): String? {
+        val tracks = lastTracks ?: return null
+        val (gi, ti) = parseTrackId(trackId) ?: return null
+        if (gi !in tracks.groups.indices) return null
+        val group = tracks.groups[gi]
+        if (ti !in 0 until group.length) return null
+        val format = group.getTrackFormat(ti)
+        mainHandler.post {
+            val override = TrackSelectionOverride(group.mediaTrackGroup, listOf(ti))
+            _player.trackSelectionParameters = _player.trackSelectionParameters
+                .buildUpon()
+                .setOverrideForType(override)
+                .build()
+        }
+        // Mirror the choice into the persistent default so reconnects
+        // and player rebuilds re-pick the same language.
+        format.language?.let { lang ->
+            preferredAudioLanguage = lang
+            mainHandler.post {
+                _player.trackSelectionParameters = _player.trackSelectionParameters
+                    .buildUpon()
+                    .setPreferredAudioLanguage(lang)
+                    .build()
+            }
+        }
+        return format.language
+    }
+
+    /**
+     * Applies a preferred audio language on the active ExoPlayer (no-op
+     * if [lang] is null/blank). Called by [connect] from the persisted
+     * [ConnectionConfig] value; also kept around so a rebuild of the
+     * ExoPlayer doesn't lose the preference.
+     */
+    fun setPreferredAudioLanguage(lang: String?) {
+        preferredAudioLanguage = lang
+        mainHandler.post {
+            _player.trackSelectionParameters = _player.trackSelectionParameters
+                .buildUpon()
+                .setPreferredAudioLanguage(lang)
+                .build()
+        }
+    }
+
+    private fun parseTrackId(id: String): Pair<Int, Int>? {
+        val dash = id.indexOf('-')
+        if (dash <= 0 || dash == id.length - 1) return null
+        val gi = id.substring(0, dash).toIntOrNull() ?: return null
+        val ti = id.substring(dash + 1).toIntOrNull() ?: return null
+        return gi to ti
     }
 
     fun disconnect() {
@@ -303,6 +466,9 @@ class PlayerManager(context: Context) {
         _state.value = PlayerState.IDLE
         _stats.value = SrtStats()
         _mediaInfo.value = MediaInfo()
+        _audioTracks.value = emptyList()
+        _selectedAudioTrackId.value = null
+        lastTracks = null
         _reconnectAttempt.value = 0
         if (wifiLock.isHeld) runCatching { wifiLock.release() }
     }
@@ -370,9 +536,13 @@ class PlayerManager(context: Context) {
         }
     }
 
-    private fun startSessionAfterClockSync(host: String, controller: PlayerSyncController) {
+    private fun startSessionAfterClockSync(
+        host: String,
+        webPort: Int,
+        controller: PlayerSyncController
+    ) {
         clockSyncJob = scope.launch {
-            val sample = estimateRelayClockWithRetry(host, controller, maxAttempts = 3)
+            val sample = estimateRelayClockWithRetry(host, webPort, controller, maxAttempts = 3)
             if (syncController !== controller || !autoReconnectEnabled) return@launch
             if (sample != null) {
                 controller.updateClockOffset(sample.offsetMs)
@@ -381,18 +551,19 @@ class PlayerManager(context: Context) {
             }
             startSession()
             if (sample == null) {
-                retryRelayClockSyncInBackground(host, controller)
+                retryRelayClockSyncInBackground(host, webPort, controller)
             }
         }
     }
 
     private suspend fun estimateRelayClockWithRetry(
         host: String,
+        webPort: Int,
         controller: PlayerSyncController,
         maxAttempts: Int
     ): RelayClockSync.Sample? {
         repeat(maxAttempts.coerceAtLeast(1)) { attempt ->
-            val sample = RelayClockSync.estimate(host)
+            val sample = RelayClockSync.estimate(host, webPort = webPort)
             if (sample != null || syncController !== controller || !autoReconnectEnabled) {
                 return sample
             }
@@ -401,11 +572,15 @@ class PlayerManager(context: Context) {
         return null
     }
 
-    private fun retryRelayClockSyncInBackground(host: String, controller: PlayerSyncController) {
+    private fun retryRelayClockSyncInBackground(
+        host: String,
+        webPort: Int,
+        controller: PlayerSyncController
+    ) {
         clockSyncJob = scope.launch {
             while (isActive && syncController === controller && autoReconnectEnabled) {
                 delay(CLOCK_SYNC_RETRY_MS)
-                val sample = RelayClockSync.estimate(host)
+                val sample = RelayClockSync.estimate(host, webPort = webPort)
                 if (syncController !== controller || !autoReconnectEnabled) return@launch
                 if (sample != null) {
                     controller.updateClockOffset(sample.offsetMs)
@@ -416,24 +591,80 @@ class PlayerManager(context: Context) {
         }
     }
 
+    /** Walks the PlaybackException cause chain for a typed SRT
+     *  handshake rejection. */
+    private fun findSrtConnectException(t: Throwable?): SrtConnectException? {
+        var cur: Throwable? = t
+        var hops = 0
+        while (cur != null && hops < 12) {
+            if (cur is SrtConnectException) return cur
+            cur = cur.cause
+            hops++
+        }
+        return null
+    }
+
+    /** Asks the relay why the session dropped, via the HTTP side-channel.
+     *  Returns the reason string ("kicked" / "viewer_limit" /
+     *  "wrong_stream_id") or null if the relay has no fresh event for
+     *  this streamid (i.e. a genuine network drop). Best-effort. */
+    private suspend fun fetchDisconnectReason(): String? {
+        val ep = lastEndpoint ?: return null
+        val streamId = ep.options.streamId
+        if (streamId.isEmpty()) return null
+        return RelayClockSync.disconnectReason(ep.host, relayHttpPort, streamId)
+    }
+
     private fun scheduleReconnect() {
         if (reconnectJob?.isActive == true) return
         val ep = lastEndpoint ?: return
         _state.value = PlayerState.RECONNECTING
 
+        // Refine the reason text from the relay's side-channel (kicks and
+        // limits surface here even when the SRT error was generic). Purely
+        // cosmetic — does not affect the retry flow.
+        scope.launch {
+            when (fetchDisconnectReason()) {
+                "kicked"          -> _lastError.value = "Disconnected by the relay operator."
+                "viewer_limit"    -> _lastError.value = "Relay free plan: max 3 viewers per source."
+                "wrong_stream_id" -> _lastError.value = "Wrong stream ID — not allowed for this source."
+            }
+        }
+
         reconnectJob = scope.launch {
             while (isActive && autoReconnectEnabled && lastEndpoint != null) {
                 val attempt = _reconnectAttempt.value + 1
+                if (attempt > MAX_RECONNECT_ATTEMPTS) {
+                    // Out of attempts — give up and return to the menu with
+                    // the last reason shown there.
+                    autoReconnectEnabled = false
+                    _state.value = PlayerState.ERROR
+                    _exitToMenu.tryEmit(_lastError.value)
+                    break
+                }
                 _reconnectAttempt.value = attempt
-                val delayMs = backoffDelay(attempt)
-                delay(delayMs)
+                delay(backoffDelay(attempt))
                 if (!autoReconnectEnabled) break
+
+                val epochBefore = errorEpoch
                 teardownCurrentSession()
                 startSession(ep)
-                delay(2000)
-                if (_state.value == PlayerState.PLAYING ||
-                    _state.value == PlayerState.BUFFERING
+
+                // Wait for a *definitive* outcome. prepare() flips ExoPlayer
+                // to BUFFERING immediately, so BUFFERING is NOT success — we
+                // only count PLAYING. A new onPlayerError (errorEpoch bump)
+                // or the connect timeout means this attempt failed; loop on
+                // to the next attempt (which increments the counter).
+                val deadline = System.currentTimeMillis() + RECONNECT_OUTCOME_TIMEOUT_MS
+                var success = false
+                while (isActive && autoReconnectEnabled &&
+                    System.currentTimeMillis() < deadline
                 ) {
+                    if (_state.value == PlayerState.PLAYING) { success = true; break }
+                    if (errorEpoch != epochBefore) break  // attempt failed fast
+                    delay(150)
+                }
+                if (success) {
                     _reconnectAttempt.value = 0
                     break
                 }
@@ -549,5 +780,12 @@ class PlayerManager(context: Context) {
          *  Short enough that a 1-frame overshoot at 30 fps gets caught the
          *  same second; long enough to keep CPU usage negligible. */
         const val LIVE_EDGE_CHECK_MS = 250L
+        /** How many reconnect attempts before giving up and returning the
+         *  user to the connection menu. */
+        const val MAX_RECONNECT_ATTEMPTS = 3
+        /** Per-attempt window to reach PLAYING before the attempt counts as
+         *  failed. Instant rejections short-circuit via errorEpoch, so this
+         *  only bounds the "stuck buffering" case. */
+        const val RECONNECT_OUTCOME_TIMEOUT_MS = 6000L
     }
 }

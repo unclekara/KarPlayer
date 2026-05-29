@@ -2,6 +2,8 @@ package com.karplayer.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import android.content.Context
+import com.karplayer.player.AudioTrack
 import com.karplayer.player.MediaInfo
 import com.karplayer.player.PlayerManager
 import com.karplayer.player.PlayerState
@@ -23,6 +25,11 @@ class PlayerViewModel(
     val isInPip: StateFlow<Boolean> = playerManager.isInPip
     val syncState: StateFlow<PlayerSyncController.State?> = playerManager.syncState
     val measuredLagMs: StateFlow<Long?> = playerManager.measuredLagMs
+    val audioTracks: StateFlow<List<AudioTrack>> = playerManager.audioTracks
+    val selectedAudioTrackId: StateFlow<String?> = playerManager.selectedAudioTrackId
+    val exitToMenu = playerManager.exitToMenu
+
+    fun clearError() = playerManager.clearError()
 
     fun onAppResumed() = playerManager.onAppResumed()
 
@@ -66,11 +73,28 @@ class PlayerViewModel(
             useSoftwareDecoder = cfg.useSoftwareDecoder,
             maxBufferMs = maxBufferMs,
             seiSync = seiConfig,
-            liveEdgeTargetMs = liveEdgeTargetMs
+            liveEdgeTargetMs = liveEdgeTargetMs,
+            relayHttpPort = cfg.relayHttpPort,
+            preferredAudioLanguage = cfg.preferredAudioLanguage?.ifBlank { null }
         )
     }
 
     fun disconnect() { playerManager.disconnect() }
+
+    /**
+     * Picks an audio track from [audioTracks] and persists the resolved
+     * language as the default for future sessions (so a reconnect opens
+     * on the same language). Passing a [context] persists immediately
+     * via [ConnectionConfigStore]; pass null to skip persistence
+     * (useful for in-memory test flows).
+     */
+    fun selectAudio(trackId: String, context: Context? = null) {
+        val lang = playerManager.selectAudio(trackId) ?: return
+        if (lang == _config.value.preferredAudioLanguage) return
+        val updated = _config.value.copy(preferredAudioLanguage = lang)
+        _config.value = updated
+        if (context != null) ConnectionConfigStore.save(context, updated)
+    }
 
     class Factory(private val playerManager: PlayerManager) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

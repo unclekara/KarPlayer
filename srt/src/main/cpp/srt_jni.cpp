@@ -6,6 +6,7 @@
 
 #include <jni.h>
 #include <android/log.h>
+#include <atomic>
 #include <cstring>
 #include <string>
 
@@ -26,6 +27,15 @@ static constexpr jint KP_ERR_SETOPT      = -1002;
 static constexpr jint KP_ERR_CONNECT     = -1003;
 static constexpr jint KP_ERR_INVALID     = -1004;
 static constexpr jint KP_ERR_READ        = -1005;
+
+// Last SRT rejection reason from a failed CALLER connect, surfaced to
+// Kotlin via nativeLastRejectReason(). Values are libsrt's
+// SRT_REJ_* / SRT_REJX_* codes — notably SRT_REJX_FORBIDDEN (1403,
+// wrong stream id) and SRT_REJX_OVERLOAD (1402, viewer limit) that the
+// KarRelay listener sets. The player connects one socket at a time, so
+// a single shared slot is sufficient; atomic for visibility across the
+// connect/UI threads.
+static std::atomic<int> g_lastRejectReason{0};
 
 extern "C" {
 
@@ -174,9 +184,11 @@ Java_com_karplayer_srt_SrtNative_nativeConnect(
     env->ReleaseStringUTFChars(jhost, host);
 
     if (mode == 0) { // CALLER
+        g_lastRejectReason.store(0, std::memory_order_relaxed);
         int rc = srt_connect(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
         if (rc == SRT_ERROR) {
             int rej = srt_getrejectreason(s);
+            g_lastRejectReason.store(rej, std::memory_order_relaxed);
             const char* rejStr = srt_rejectreason_str(rej);
             LOGE("srt_connect failed: %s | rej_code=%d rej_reason=%s",
                  srt_getlasterror_str(), rej, rejStr ? rejStr : "?");
@@ -284,6 +296,16 @@ Java_com_karplayer_srt_SrtNative_nativeClose(JNIEnv* /*env*/, jobject /*thiz*/, 
     SRTSOCKET s = static_cast<SRTSOCKET>(handle);
     if (s != SRT_INVALID_SOCK) srt_close(s);
 #endif
+}
+
+// ----------------------------------------------------------------------------
+// nativeLastRejectReason(): Int
+// Returns the SRT rejection reason from the most recent failed CALLER
+// connect (libsrt SRT_REJ_* / SRT_REJX_* code), or 0 if none.
+// ----------------------------------------------------------------------------
+JNIEXPORT jint JNICALL
+Java_com_karplayer_srt_SrtNative_nativeLastRejectReason(JNIEnv* /*env*/, jobject /*thiz*/) {
+    return static_cast<jint>(g_lastRejectReason.load(std::memory_order_relaxed));
 }
 
 // ----------------------------------------------------------------------------

@@ -35,7 +35,13 @@ data class ConnectionConfig(
     val maxBufferMs: Int = 400,         // used when syncMode = LOW_LATENCY
     val targetLagMs: Int = 250,         // used when syncMode = SEI_SYNC
     val syncDeadbandMs: Int = 50,       // SEI_SYNC speed deadband
-    val maxSpeedAdjustPct: Int = 5      // SEI_SYNC max speed deviation, 0..50
+    val maxSpeedAdjustPct: Int = 5,     // SEI_SYNC max speed deviation, 0..50
+    val relayHttpPort: Int = 8484,      // KarRelay service (web) port
+    /** ISO-639 code of the user's last picked audio language. Empty /
+     *  null = let the demuxer pick. Surface set by PlayerScreen's
+     *  AUDIO bottom sheet; applied at connect via
+     *  TrackSelectionParameters.setPreferredAudioLanguage. */
+    val preferredAudioLanguage: String? = null,
 ) {
     fun toSrtOptions(): SrtOptions = SrtOptions(
         latency = latencyMs,
@@ -68,6 +74,8 @@ object ConnectionConfigStore {
     private const val KEY_TARGET_LAG_MS = "target_lag_ms"
     private const val KEY_SYNC_DEADBAND_MS = "sync_deadband_ms"
     private const val KEY_MAX_SPEED_ADJUST_PCT = "max_speed_adjust_pct"
+    private const val KEY_RELAY_HTTP_PORT = "relay_http_port"
+    private const val KEY_PREFERRED_AUDIO_LANG = "preferred_audio_lang"
 
     fun load(context: Context): ConnectionConfig {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -92,7 +100,9 @@ object ConnectionConfigStore {
             maxBufferMs = p.getInt(KEY_MAX_BUFFER_MS, 400),
             targetLagMs = p.getInt(KEY_TARGET_LAG_MS, 250),
             syncDeadbandMs = p.getInt(KEY_SYNC_DEADBAND_MS, 50),
-            maxSpeedAdjustPct = p.getInt(KEY_MAX_SPEED_ADJUST_PCT, 5)
+            maxSpeedAdjustPct = p.getInt(KEY_MAX_SPEED_ADJUST_PCT, 5),
+            relayHttpPort = p.getInt(KEY_RELAY_HTTP_PORT, 8484),
+            preferredAudioLanguage = p.getString(KEY_PREFERRED_AUDIO_LANG, null)?.ifBlank { null }
         )
     }
 
@@ -113,6 +123,8 @@ object ConnectionConfigStore {
             putInt(KEY_TARGET_LAG_MS, cfg.targetLagMs)
             putInt(KEY_SYNC_DEADBAND_MS, cfg.syncDeadbandMs)
             putInt(KEY_MAX_SPEED_ADJUST_PCT, cfg.maxSpeedAdjustPct)
+            putInt(KEY_RELAY_HTTP_PORT, cfg.relayHttpPort)
+            putString(KEY_PREFERRED_AUDIO_LANG, cfg.preferredAudioLanguage)
             apply()
         }
     }

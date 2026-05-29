@@ -81,8 +81,41 @@ internal object RelayClockSync {
         return if (host.contains(':') && !host.startsWith("[")) "[$host]" else host
     }
 
+    /**
+     * Queries the relay's /api/disconnect-reason side-channel after a
+     * mid-session drop. Returns the reason string (e.g. "kicked",
+     * "viewer_limit", "wrong_stream_id") or null if the relay has no
+     * recent event for this streamid. Best-effort; never throws.
+     */
+    suspend fun disconnectReason(
+        host: String,
+        webPort: Int,
+        streamId: String,
+    ): String? = withContext(Dispatchers.IO) {
+        val cleanHost = host.trim()
+        if (cleanHost.isEmpty() || streamId.isEmpty()) return@withContext null
+        val sid = java.net.URLEncoder.encode(streamId, "UTF-8")
+        val url = URL("http://${formatHost(cleanHost)}:$webPort/api/disconnect-reason?streamid=$sid")
+        runCatching {
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                useCaches = false
+            }
+            try {
+                if (conn.responseCode != 200) return@runCatching null
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val reason = JSONObject(body).optString("reason", "")
+                reason.ifEmpty { null }
+            } finally {
+                conn.disconnect()
+            }
+        }.getOrNull()
+    }
+
     private const val TAG = "KarPlayer"
-    private const val DEFAULT_WEB_PORT = 8080
+    private const val DEFAULT_WEB_PORT = 8484
     private const val DEFAULT_ATTEMPTS = 5
     private const val TIMEOUT_MS = 300
     private const val WARN_OFFSET_MS = 1_000L

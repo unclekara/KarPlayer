@@ -62,6 +62,7 @@ fun ConnectionScreen(
     var targetLagMs by remember { mutableStateOf(initial.targetLagMs.toFloat()) }
     var syncDeadbandMs by remember { mutableStateOf(initial.syncDeadbandMs.toFloat()) }
     var maxSpeedAdjustPct by remember { mutableStateOf(initial.maxSpeedAdjustPct.toFloat()) }
+    var relayHttpPort by remember { mutableStateOf(initial.relayHttpPort.toString()) }
 
     val deviceIp = remember { findLocalIPv4() }
     val isTv = isTvDevice()
@@ -189,47 +190,29 @@ fun ConnectionScreen(
                 placeholder = { Text("optional, sender-defined") },
                 modifier = Modifier.fillMaxWidth()
             )
+            TvAwareTextField(
+                value = relayHttpPort,
+                onValueChange = { raw ->
+                    relayHttpPort = raw.filter { it.isDigit() }.take(5)
+                },
+                label = { Text("Relay service port") },
+                placeholder = { Text("8484") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+            HelperText(
+                "Service port of the relay. Must match the port set in the " +
+                "relay app."
+            )
         }
 
         Section("Receiver buffer (SRT latency)") {
-            var latencyText by remember(latencyMs) { mutableStateOf(latencyMs.toString()) }
-            fun applyLatency(value: Int) {
-                val c = value.coerceIn(20, 8000)
-                latencyMs = c
-                latencyText = c.toString()
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FocusableOutlinedButton(
-                    onClick = { applyLatency(latencyMs - 1) },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                    modifier = Modifier.size(44.dp)
-                ) { Text("−", fontSize = 18.sp) }
-
-                TvAwareTextField(
-                    value = latencyText,
-                    onValueChange = { raw ->
-                        val cleaned = raw.filter { it.isDigit() }.take(5)
-                        latencyText = cleaned
-                        cleaned.toIntOrNull()?.let { latencyMs = it.coerceIn(20, 8000) }
-                    },
-                    label = { Text("Latency, ms") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f)
-                )
-
-                FocusableOutlinedButton(
-                    onClick = { applyLatency(latencyMs + 1) },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-                    modifier = Modifier.size(44.dp)
-                ) { Text("+", fontSize = 18.sp) }
-            }
-            Slider(
-                value = latencyMs.coerceIn(20, 1000).toFloat(),
-                onValueChange = { applyLatency(it.roundToInt()) },
-                valueRange = 20f..1000f
+            NumericStepperField(
+                label = "Latency, ms",
+                value = latencyMs,
+                onValueChange = { latencyMs = it },
+                valueRange = 20..8000,
+                sliderRange = 20..1000
             )
             HelperText(
                 "SRTO_RCVLATENCY — TSBPD jitter buffer on receiver side. " +
@@ -356,11 +339,12 @@ fun ConnectionScreen(
             )
 
             if (syncMode == SyncMode.LOW_LATENCY) {
-                LabeledValue("Max buffer", "${maxBufferMs.toInt()} ms")
-                Slider(
-                    value = maxBufferMs.coerceIn(150f, 2000f),
-                    onValueChange = { maxBufferMs = it },
-                    valueRange = 150f..2000f
+                NumericStepperField(
+                    label = "Max buffer, ms",
+                    value = maxBufferMs.toInt(),
+                    onValueChange = { maxBufferMs = it.toFloat() },
+                    valueRange = 150..2000,
+                    step = 25
                 )
                 HelperText(
                     "ExoPlayer's `maxBufferMs`. Lower = less lag, more " +
@@ -369,11 +353,12 @@ fun ConnectionScreen(
             }
 
             if (syncMode == SyncMode.SEI_SYNC) {
-                LabeledValue("Target lag", "${targetLagMs.toInt()} ms")
-                Slider(
-                    value = targetLagMs.coerceIn(100f, 2000f),
-                    onValueChange = { targetLagMs = it },
-                    valueRange = 100f..2000f
+                NumericStepperField(
+                    label = "Target lag, ms",
+                    value = targetLagMs.toInt(),
+                    onValueChange = { targetLagMs = it.toFloat() },
+                    valueRange = 100..2000,
+                    step = 1
                 )
                 HelperText(
                     "Lag from relay wall-clock all KarPlayer clients " +
@@ -381,28 +366,31 @@ fun ConnectionScreen(
                     "network jitter."
                 )
 
-                LabeledValue("Deadband", "${syncDeadbandMs.toInt()} ms")
-                Slider(
-                    value = syncDeadbandMs.coerceIn(10f, 200f),
-                    onValueChange = { syncDeadbandMs = it },
-                    valueRange = 10f..200f
+                NumericStepperField(
+                    label = "Deadband, ms",
+                    value = syncDeadbandMs.toInt(),
+                    onValueChange = { syncDeadbandMs = it.toFloat() },
+                    valueRange = 10..200,
+                    step = 1
                 )
                 HelperText(
                     "Don't adjust speed when current lag is within ± this of " +
                     "the target. Prevents oscillation around the set-point."
                 )
 
-                LabeledValue("Max speed adjust", "${maxSpeedAdjustPct.toInt()} %")
-                Slider(
-                    value = maxSpeedAdjustPct.coerceIn(1f, 20f),
-                    onValueChange = { maxSpeedAdjustPct = it },
-                    valueRange = 1f..20f
+                NumericStepperField(
+                    label = "Max speed adjust, %",
+                    value = maxSpeedAdjustPct.toInt(),
+                    onValueChange = { maxSpeedAdjustPct = it.toFloat() },
+                    valueRange = 1..20,
+                    step = 1
                 )
                 HelperText(
                     "Cap on how far the playback speed can deviate from " +
                     "1.0× to chase the target. 5 % is usually inaudible; " +
                     "higher converges faster but is more noticeable on audio."
                 )
+
             }
         }
 
@@ -444,7 +432,9 @@ fun ConnectionScreen(
                         maxBufferMs = maxBufferMs.toInt(),
                         targetLagMs = targetLagMs.toInt(),
                         syncDeadbandMs = syncDeadbandMs.toInt(),
-                        maxSpeedAdjustPct = maxSpeedAdjustPct.toInt()
+                        maxSpeedAdjustPct = maxSpeedAdjustPct.toInt(),
+                        relayHttpPort = relayHttpPort.toIntOrNull()?.coerceIn(1, 65535)
+                            ?: 8484
                     )
                 )
             },
