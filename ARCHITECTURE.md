@@ -64,6 +64,10 @@ fit together and where the non-obvious decisions live.
   Surfaces `lastError` briefly on the menu, auto-dismissing it after 8 s.
 - **`PlayerScreen`** — video surface, HUD, error UI; observes
   `exitToMenu` to return to the menu after reconnects are exhausted.
+  In **kiosk mode** every overlay is gated off, the video layer is
+  covered with opaque black once playback stops (a `SurfaceView` would
+  otherwise hold the last decoded frame), and BACK must be pressed twice
+  to leave.
 - **`ConnectionScreen` / `QuickConnectScreen`** — full / one-tap connect.
 - **`PlayerViewModel`** — thin pass-through to `PlayerManager`.
 
@@ -95,6 +99,18 @@ libsrt: `REJX_FORBIDDEN=1403`, `REJX_OVERLOAD=1402`). The native layer stores
 it; `SrtConnectException` exposes `isWrongStreamId` / `isViewerLimit`.
 Mid-session kicks carry no SRT reason, so the player asks the relay over HTTP
 (`/api/disconnect-reason?streamid=…`).
+
+### Kiosk mode
+`ConnectionConfig.kioskMode` → `PlayerManager.connect(kioskMode = true)`.
+The flag does exactly one thing in the player core: the reconnect loop
+stops honouring `MAX_RECONNECT_ATTEMPTS`, so it never emits `exitToMenu`
+and keeps retrying at the capped backoff forever. Everything else is
+presentation, handled in `PlayerScreen` — see above.
+
+`kioskAutoStart` lives one level up, in `KarPlayerNavRoot`: on launch it
+connects and jumps to `PLAYER` without touching the menu, once per
+process (`rememberSaveable` guard) and only if
+`ConnectionConfig.isConnectable`.
 
 ### SEI sync
 Relay injects `KarSEI-TSYNC` (UTC µs) per I-frame → player parses → controller

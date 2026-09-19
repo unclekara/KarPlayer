@@ -375,7 +375,10 @@ filled in from `ConnectionConfig()`'s constructor defaults.
 | `target_lag_ms` | Int | 250 | SEI_SYNC target lag |
 | `sync_deadband_ms` | Int | 50 | SEI_SYNC speed-control deadband |
 | `max_speed_adjust_pct` | Int | 5 | SEI_SYNC speed range cap (0..50) |
-| `relay_http_port` | Int | 8080 | KarRelay /api/time port |
+| `relay_http_port` | Int | 8484 | KarRelay /api/time port |
+| `preferred_audio_lang` | String? | null | ISO-639 code of the last picked audio track (0.4) |
+| `kiosk_mode` | Bool | false | Unattended mode: no overlays, black on no signal, unbounded reconnect (0.5) |
+| `kiosk_autostart` | Bool | false | Connect on app launch; only honoured with `kiosk_mode` (0.5) |
 
 ---
 

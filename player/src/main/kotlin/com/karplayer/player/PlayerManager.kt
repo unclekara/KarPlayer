@@ -151,6 +151,11 @@ class PlayerManager(context: Context) {
 
     private var lastEndpoint: Endpoint? = null
     private var autoReconnectEnabled: Boolean = false
+
+    /** Kiosk / digital-signage session. Reconnect is unbounded: we never
+     *  give up and never emit [exitToMenu], so the UI can stay on a black
+     *  screen until the signal comes back. Set per connect() call. */
+    @Volatile private var kioskMode: Boolean = false
     private var relayHttpPort: Int = 8484  // for the disconnect-reason side-channel
     @Volatile private var errorEpoch: Int = 0  // bumped on every onPlayerError
 
@@ -297,10 +302,11 @@ class PlayerManager(context: Context) {
         liveEdgeTargetMs: Int = 0,
         relayHttpPort: Int = 8484,
         preferredAudioLanguage: String? = null,
+        kioskMode: Boolean = false,
     ) {
         Log.i(
             TAG,
-            "connect: $host:$port maxBufferMs=$maxBufferMs " +
+            "connect: $host:$port maxBufferMs=$maxBufferMs kiosk=$kioskMode " +
                     "seiSync=${seiSync != null} liveEdgeTargetMs=$liveEdgeTargetMs " +
                     "relayHttpPort=$relayHttpPort " +
                     "srtLatency=${options.latency} sw=$useSoftwareDecoder"
@@ -311,6 +317,7 @@ class PlayerManager(context: Context) {
         _state.value = PlayerState.CONNECTING
         lastEndpoint = Endpoint(host, port, options)
         this.relayHttpPort = relayHttpPort
+        this.kioskMode = kioskMode
         autoReconnectEnabled = true
         this.useSoftwareDecoder = useSoftwareDecoder
         this.liveEdgeTargetMs = liveEdgeTargetMs
@@ -634,7 +641,11 @@ class PlayerManager(context: Context) {
         reconnectJob = scope.launch {
             while (isActive && autoReconnectEnabled && lastEndpoint != null) {
                 val attempt = _reconnectAttempt.value + 1
-                if (attempt > MAX_RECONNECT_ATTEMPTS) {
+                // Kiosk sessions never give up: an unattended screen has
+                // nobody to read a menu, so we keep retrying at the capped
+                // backoff and let the UI hold a black frame until the
+                // signal returns.
+                if (!kioskMode && attempt > MAX_RECONNECT_ATTEMPTS) {
                     // Out of attempts — give up and return to the menu with
                     // the last reason shown there.
                     autoReconnectEnabled = false

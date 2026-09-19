@@ -63,6 +63,8 @@ fun ConnectionScreen(
     var syncDeadbandMs by remember { mutableStateOf(initial.syncDeadbandMs.toFloat()) }
     var maxSpeedAdjustPct by remember { mutableStateOf(initial.maxSpeedAdjustPct.toFloat()) }
     var relayHttpPort by remember { mutableStateOf(initial.relayHttpPort.toString()) }
+    var kioskMode by remember { mutableStateOf(initial.kioskMode) }
+    var kioskAutoStart by remember { mutableStateOf(initial.kioskAutoStart) }
 
     val deviceIp = remember { findLocalIPv4() }
     val isTv = isTvDevice()
@@ -409,6 +411,41 @@ fun ConnectionScreen(
             )
         }
 
+        Section("Kiosk mode") {
+            FocusableSwitchRow(
+                label = "Kiosk mode",
+                checked = kioskMode,
+                onCheckedChange = { kioskMode = it }
+            )
+            HelperText(
+                "For unattended screens (signage, monitor walls, venue " +
+                "displays). Playback runs with no chrome at all: no stats " +
+                "overlay, no bottom bar, no spinner, no error text — just " +
+                "the picture on black. While no signal is arriving the " +
+                "screen stays black instead of returning to the menu, and " +
+                "reconnect keeps retrying indefinitely, so the stream is " +
+                "picked back up on its own when the sender returns. " +
+                "Press BACK twice to leave."
+            )
+
+            if (kioskMode) {
+                FocusableSwitchRow(
+                    label = "Connect on app launch",
+                    checked = kioskAutoStart,
+                    onCheckedChange = { kioskAutoStart = it }
+                )
+                HelperText(
+                    "Skips the menu on startup and goes straight into the " +
+                    "stream with these settings, so the screen recovers on " +
+                    "its own after a power cycle or an app restart. Needs a " +
+                    "valid host/port (or Listener mode) — otherwise the menu " +
+                    "opens as usual. Note this is autostart of the stream " +
+                    "when the app opens, not of the app when the device " +
+                    "boots: that is up to your launcher or MDM."
+                )
+            }
+        }
+
         Spacer(Modifier.height(8.dp))
         FocusableButton(
             onClick = {
@@ -416,8 +453,12 @@ fun ConnectionScreen(
                 val effectiveHost = if (mode == SrtMode.LISTENER && host.isBlank()) {
                     "0.0.0.0"
                 } else host
+                // copy() from `initial`, not a fresh ConnectionConfig:
+                // this form does not edit every field (the audio-language
+                // preference is set from the player's track picker), and
+                // rebuilding from scratch silently reset those.
                 onConnect(
-                    ConnectionConfig(
+                    initial.copy(
                         host = effectiveHost,
                         port = port.toInt(),
                         latencyMs = latencyMs,
@@ -434,7 +475,9 @@ fun ConnectionScreen(
                         syncDeadbandMs = syncDeadbandMs.toInt(),
                         maxSpeedAdjustPct = maxSpeedAdjustPct.toInt(),
                         relayHttpPort = relayHttpPort.toIntOrNull()?.coerceIn(1, 65535)
-                            ?: 8484
+                            ?: 8484,
+                        kioskMode = kioskMode,
+                        kioskAutoStart = kioskAutoStart
                     )
                 )
             },

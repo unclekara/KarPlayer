@@ -42,7 +42,24 @@ data class ConnectionConfig(
      *  AUDIO bottom sheet; applied at connect via
      *  TrackSelectionParameters.setPreferredAudioLanguage. */
     val preferredAudioLanguage: String? = null,
+    /** Kiosk / digital-signage mode. Hides every overlay (stats, bottom
+     *  bar, spinners, error text), forces immersive fullscreen and keeps
+     *  the screen black while no signal is arriving. Reconnect becomes
+     *  unbounded so the player waits on a black screen indefinitely
+     *  instead of bailing out to the menu. */
+    val kioskMode: Boolean = false,
+    /** Kiosk autostart: connect on app launch without waiting for a tap,
+     *  so an unattended screen comes back on its own after a power cycle
+     *  or an app restart. Only honoured while [kioskMode] is on — see
+     *  KarPlayerNavRoot. */
+    val kioskAutoStart: Boolean = false,
 ) {
+    /** True when the form holds enough to attempt a session. Mirrors the
+     *  Connect button's own validation; used by kiosk autostart, which has
+     *  no user around to correct a half-filled config. */
+    val isConnectable: Boolean
+        get() = (mode == SrtMode.LISTENER || host.isNotBlank()) && port in 1..65535
+
     fun toSrtOptions(): SrtOptions = SrtOptions(
         latency = latencyMs,
         mode = mode,
@@ -76,6 +93,8 @@ object ConnectionConfigStore {
     private const val KEY_MAX_SPEED_ADJUST_PCT = "max_speed_adjust_pct"
     private const val KEY_RELAY_HTTP_PORT = "relay_http_port"
     private const val KEY_PREFERRED_AUDIO_LANG = "preferred_audio_lang"
+    private const val KEY_KIOSK_MODE = "kiosk_mode"
+    private const val KEY_KIOSK_AUTOSTART = "kiosk_autostart"
 
     fun load(context: Context): ConnectionConfig {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -102,7 +121,9 @@ object ConnectionConfigStore {
             syncDeadbandMs = p.getInt(KEY_SYNC_DEADBAND_MS, 50),
             maxSpeedAdjustPct = p.getInt(KEY_MAX_SPEED_ADJUST_PCT, 5),
             relayHttpPort = p.getInt(KEY_RELAY_HTTP_PORT, 8484),
-            preferredAudioLanguage = p.getString(KEY_PREFERRED_AUDIO_LANG, null)?.ifBlank { null }
+            preferredAudioLanguage = p.getString(KEY_PREFERRED_AUDIO_LANG, null)?.ifBlank { null },
+            kioskMode = p.getBoolean(KEY_KIOSK_MODE, false),
+            kioskAutoStart = p.getBoolean(KEY_KIOSK_AUTOSTART, false)
         )
     }
 
@@ -125,6 +146,8 @@ object ConnectionConfigStore {
             putInt(KEY_MAX_SPEED_ADJUST_PCT, cfg.maxSpeedAdjustPct)
             putInt(KEY_RELAY_HTTP_PORT, cfg.relayHttpPort)
             putString(KEY_PREFERRED_AUDIO_LANG, cfg.preferredAudioLanguage)
+            putBoolean(KEY_KIOSK_MODE, cfg.kioskMode)
+            putBoolean(KEY_KIOSK_AUTOSTART, cfg.kioskAutoStart)
             apply()
         }
     }

@@ -75,7 +75,8 @@ class PlayerViewModel(
             seiSync = seiConfig,
             liveEdgeTargetMs = liveEdgeTargetMs,
             relayHttpPort = cfg.relayHttpPort,
-            preferredAudioLanguage = cfg.preferredAudioLanguage?.ifBlank { null }
+            preferredAudioLanguage = cfg.preferredAudioLanguage?.ifBlank { null },
+            kioskMode = cfg.kioskMode
         )
     }
 

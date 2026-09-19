@@ -4,7 +4,59 @@ All notable changes to KarPlayer are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/); the project
 uses simple `MAJOR.MINOR` tags.
 
-## [0.4] — unreleased
+## [0.5] — 2026-09
+
+### Added
+
+- **Kiosk mode** — opt-in switch in Settings, for unattended screens
+  (signage, monitor walls, venue displays). Persisted as `kiosk_mode`
+  in `ConnectionConfig`.
+  - **No chrome at all** during playback: stats overlay, SEI-sync
+    indicator, bottom bar, connecting/reconnecting spinner with its
+    attempt counter, and the error panel are all gated off. Tap /
+    D-pad-CENTER no longer summons the overlay, and the brightness /
+    volume swipe HUD is disabled (the volume rocker still works — that
+    one is the system's).
+  - **Black while off air.** A `SurfaceView` holds its last decoded
+    frame after the player stops, so a dropped signal used to freeze on
+    a stale image. Kiosk mode covers the video layer with opaque black
+    once playback stops, after a 1 s grace period so ordinary
+    sub-second rebuffers don't flash black.
+  - **Unbounded reconnect.** `PlayerManager` ignores
+    `MAX_RECONNECT_ATTEMPTS` for kiosk sessions: it never emits
+    `exitToMenu`, so the player waits on black indefinitely and picks
+    the stream back up on its own when the sender returns. Non-kiosk
+    sessions keep the 3-attempt bound.
+  - **Double-BACK to leave.** With no visible chrome, a single stray
+    BACK on a remote must not drop an unattended screen out of
+    playback. Two presses within 2.5 s exit; the first shows a brief
+    "Press BACK again to exit" hint — the only pixel kiosk mode draws
+    that isn't video.
+
+  - **Autostart** (`kiosk_autostart`, second switch, shown only while
+    kiosk mode is on). Skips the menu on launch and connects straight
+    into the stream, so the screen recovers on its own after a power
+    cycle or an app restart. Fires once per process from
+    `KarPlayerNavRoot` (guarded by a `rememberSaveable` flag so a
+    rotation or a deliberate double-BACK exit doesn't re-trigger it),
+    and only when `ConnectionConfig.isConnectable` holds — no user is
+    around to fix a half-filled form. This is autostart of the *stream
+    when the app opens*, not of the *app when the device boots*; the
+    latter belongs to the launcher / MDM.
+
+### Fixed
+
+- **Settings screen no longer resets fields it doesn't edit.**
+  `ConnectionScreen` built a fresh `ConnectionConfig` on Connect, which
+  silently dropped `preferredAudioLanguage` — so pressing Connect in
+  Settings threw away the audio-track choice persisted in 0.4. It now
+  builds via `initial.copy(...)`, which also keeps future non-form
+  fields safe.
+- **API.md** persisted-config table: `relay_http_port` default was still
+  documented as 8080 (changed to 8484 in 0.3), and `preferred_audio_lang`
+  (added in 0.4) was missing.
+
+## [0.4] — 2026-09
 
 ### Added
 

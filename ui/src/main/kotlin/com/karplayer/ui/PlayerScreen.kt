@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -81,6 +82,16 @@ import kotlinx.coroutines.delay
 private enum class HudKind { VOLUME, BRIGHTNESS }
 private data class HudState(val kind: HudKind, val value: Float)
 
+/** Kiosk mode shows no chrome at all, so a single stray BACK on a remote
+ *  must not drop an unattended screen out of playback. Two presses inside
+ *  this window leave the player. */
+private const val KIOSK_EXIT_CONFIRM_MS = 2500L
+
+/** Grace period before kiosk mode blanks the video layer to black. Long
+ *  enough that an ordinary sub-second rebuffer does not flash black,
+ *  short enough that a dead signal blanks promptly. */
+private const val KIOSK_BLANK_DELAY_MS = 1000L
+
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel,
@@ -96,6 +107,11 @@ fun PlayerScreen(
     val syncLagMs by viewModel.measuredLagMs.collectAsState()
     val audioTracks by viewModel.audioTracks.collectAsState()
     val selectedAudioTrackId by viewModel.selectedAudioTrackId.collectAsState()
+    // Kiosk mode: video on black, nothing else. Every overlay below is
+    // gated on this, and PlayerManager keeps reconnecting forever so we
+    // never get an exitToMenu for an unattended screen.
+    val connectionConfig by viewModel.connectionConfig.collectAsState()
+    val kiosk = connectionConfig.kioskMode
     var audioPickerVisible by remember { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -125,9 +141,47 @@ fun PlayerScreen(
     LaunchedEffect(isTv) { if (isTv) rootFocus.requestFocus() }
     // BACK on a remote (or phone) should leave the player cleanly. If the
     // overlay is locked we eat the press once and unlock instead, mirroring
-    // the long-press-to-unlock gesture on touch.
+    // the long-press-to-unlock gesture on touch. In kiosk mode a single
+    // press is not enough — see KIOSK_EXIT_CONFIRM_MS.
+    var kioskExitArmedAtMs by remember { mutableLongStateOf(0L) }
+    var kioskExitHintVisible by remember { mutableStateOf(false) }
     BackHandler {
-        if (locked) locked = false else onDisconnect()
+        when {
+            locked -> locked = false
+            kiosk -> {
+                val now = System.currentTimeMillis()
+                if (now - kioskExitArmedAtMs <= KIOSK_EXIT_CONFIRM_MS) {
+                    onDisconnect()
+                } else {
+                    kioskExitArmedAtMs = now
+                    kioskExitHintVisible = true
+                }
+            }
+            else -> onDisconnect()
+        }
+    }
+    LaunchedEffect(kioskExitArmedAtMs) {
+        if (kioskExitArmedAtMs != 0L) {
+            delay(KIOSK_EXIT_CONFIRM_MS)
+            kioskExitHintVisible = false
+        }
+    }
+
+    // A SurfaceView keeps its last decoded frame on screen after the
+    // player stops, so a lost signal would otherwise freeze on a stale
+    // image — the opposite of what an unattended screen should show.
+    // Kiosk mode covers the video layer with opaque black whenever we are
+    // not actually playing.
+    var kioskBlank by remember { mutableStateOf(false) }
+    LaunchedEffect(kiosk, state) {
+        if (!kiosk) {
+            kioskBlank = false
+        } else if (state == PlayerState.PLAYING) {
+            kioskBlank = false
+        } else {
+            delay(KIOSK_BLANK_DELAY_MS)
+            kioskBlank = true
+        }
     }
 
     val ctx = LocalContext.current
@@ -230,20 +284,22 @@ fun PlayerScreen(
                         KeyEvent.KEYCODE_DPAD_CENTER,
                         KeyEvent.KEYCODE_ENTER,
                         KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                            if (!locked) overlayVisible = !overlayVisible
+                            if (!locked && !kiosk) overlayVisible = !overlayVisible
                             true
                         }
                         else -> false
                     }
                 }
-                .pointerInput(locked) {
-                    detectTapGestures(
-                        onTap = { if (!locked) overlayVisible = !overlayVisible },
-                        onLongPress = { if (locked) locked = false }
-                    )
-                }
                 .then(
-                    if (isTv) Modifier else Modifier.pointerInput(locked) {
+                    if (kiosk) Modifier else Modifier.pointerInput(locked) {
+                        detectTapGestures(
+                            onTap = { if (!locked) overlayVisible = !overlayVisible },
+                            onLongPress = { if (locked) locked = false }
+                        )
+                    }
+                )
+                .then(
+                    if (isTv || kiosk) Modifier else Modifier.pointerInput(locked) {
                         if (locked) return@pointerInput
                         detectVerticalDragGestures { change, dragAmount ->
                             change.consume()
@@ -274,9 +330,20 @@ fun PlayerScreen(
             onDispose { viewModel.playerManager.setSurface(null) }
         }
 
-        if (state == PlayerState.BUFFERING ||
+        if (kioskBlank) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            )
+        }
+
+        // Kiosk mode holds a plain black frame instead: no spinner, no
+        // attempt counter, nothing that reads as a broken screen to a
+        // passer-by while the sender is off air.
+        if (!kiosk && (state == PlayerState.BUFFERING ||
             state == PlayerState.CONNECTING ||
-            state == PlayerState.RECONNECTING
+            state == PlayerState.RECONNECTING)
         ) {
             Column(
                 modifier = Modifier.align(Alignment.Center),
@@ -297,7 +364,7 @@ fun PlayerScreen(
             }
         }
 
-        if (state == PlayerState.ERROR) {
+        if (!kiosk && state == PlayerState.ERROR) {
             Column(
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -308,7 +375,7 @@ fun PlayerScreen(
             }
         }
 
-        hud?.let { h ->
+        if (!kiosk) hud?.let { h ->
             HudBar(
                 kind = h.kind,
                 value = h.value,
@@ -319,7 +386,7 @@ fun PlayerScreen(
         // Overlays — completely hidden while locked or while in
         // picture-in-picture (the window is too small for chrome anyway,
         // and Android's own PiP gesture surface fights ours otherwise).
-        if (!locked && overlayVisible && !isInPip) {
+        if (!kiosk && !locked && overlayVisible && !isInPip) {
             StatsOverlay(
                 stats = stats,
                 media = media,
@@ -345,6 +412,20 @@ fun PlayerScreen(
                 onDisconnect = onDisconnect,
                 onAudio = if (audioTracks.size >= 2) ({ audioPickerVisible = true }) else null,
                 modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        // The single piece of kiosk chrome, and only after the user has
+        // already pressed BACK once — without it there is no way to tell
+        // that a second press is expected.
+        if (kiosk && kioskExitHintVisible) {
+            Text(
+                text = "Press BACK again to exit",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 13.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(24.dp)
             )
         }
 

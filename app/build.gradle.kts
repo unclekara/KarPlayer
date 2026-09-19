@@ -24,8 +24,8 @@ android {
         applicationId = "com.karplayer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.4"
+        versionCode = 6
+        versionName = "0.5"
         // armeabi-v7a included for legacy / low-cost TV boxes (Amlogic, RK).
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }

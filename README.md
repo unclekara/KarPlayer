@@ -22,7 +22,7 @@ operator kicks). Encryption (PBKEYLEN 128/192/256), receiver-side TSBPD
 latency, bandwidth cap, and stream-ID are all wired through. Runs on
 phones, tablets and Android TV / leanback launchers.
 
-Current version: **0.4** — see [CHANGELOG.md](CHANGELOG.md). For module
+Current version: **0.5** — see [CHANGELOG.md](CHANGELOG.md). For module
 layout and data flows see [ARCHITECTURE.md](ARCHITECTURE.md); for
 on-the-wire and inter-module contracts see [API.md](API.md).
 
@@ -65,6 +65,9 @@ on-the-wire and inter-module contracts see [API.md](API.md).
   Pixel 8/9 to dodge the green-tearing/freeze bug on live H.264.
 - **Android TV / leanback launcher**, D-pad-first focus order, no IME spam.
 - Immersive fullscreen, lock mode (long-press), swipe brightness / volume.
+- **Kiosk mode** (opt-in) for unattended screens: no overlays at all, black
+  screen while off air, reconnect never gives up, optional connect-on-launch.
+  Double-BACK to leave.
 
 ## Configuration
 
@@ -83,6 +86,8 @@ across launches (`SharedPreferences` — see `ConnectionConfig`).
 | Passphrase / PBKEYLEN | (empty)     | AES-128 / 192 / 256                                            |
 | Sync mode           | OFF           | OFF / LOW_LATENCY / SEI_SYNC                                   |
 | Software decoder    | Off (auto-on on buggy HW) | Manual override for the HW decoder            |
+| Kiosk mode          | Off           | Unattended screens: no chrome, black while off air, unbounded reconnect |
+| Kiosk autostart     | Off           | Connect on app launch (shown only when Kiosk mode is on) |
 
 The relay service port default changed from 8080 to 8484 in 0.3 — see
 [CHANGELOG.md](CHANGELOG.md).

@@ -28,6 +28,21 @@ fun KarPlayerNavRoot(playerManager: PlayerManager) {
     // flow that TV uses. Detail editing lives behind the Settings button.
     var screen by rememberSaveable { mutableStateOf(Screen.QUICK) }
 
+    // Kiosk autostart — go straight into the stream on launch so an
+    // unattended screen needs no interaction after a power cycle or an app
+    // restart. rememberSaveable so a configuration change (rotation, PiP
+    // exit) doesn't fire it again, and so the menu stays put after the
+    // operator has deliberately left the player with double-BACK.
+    var autoStartFired by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(initialConfig) {
+        if (autoStartFired) return@LaunchedEffect
+        if (!initialConfig.kioskMode || !initialConfig.kioskAutoStart) return@LaunchedEffect
+        if (!initialConfig.isConnectable) return@LaunchedEffect
+        autoStartFired = true
+        vm.connect(initialConfig)
+        screen = Screen.PLAYER
+    }
+
     val lastError by vm.lastError.collectAsState()
 
     // Show the failure reason on the menu only briefly — a permanent
