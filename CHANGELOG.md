@@ -4,7 +4,7 @@ All notable changes to KarPlayer are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/); the project
 uses simple `MAJOR.MINOR` tags.
 
-## [0.5] — 2026-09
+## [0.5] — 2026-10-02
 
 ### Added
 
