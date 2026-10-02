@@ -56,7 +56,9 @@ fit together and where the non-obvious decisions live.
 - **`SeiTimecodeParser` / `SeiAwareDataSource`** — scan the TS for the
   `KarSEI-TSYNC` UUID with a carry buffer across reads.
 - **`LowLatencyRenderersFactory`** — codec selection + `KEY_LOW_LATENCY`,
-  with the Exynos AVC carve-out.
+  with the Exynos AVC carve-out. Builds its `MediaCodecVideoRenderer`
+  through `MediaCodecVideoRenderer.Builder` (Media3 1.5+ deprecated the
+  positional constructors).
 
 ### `ui/` — Compose
 - **`KarPlayerNavRoot`** — three screens: `QUICK`, `SETTINGS`

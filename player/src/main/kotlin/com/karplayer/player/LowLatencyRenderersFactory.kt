@@ -80,15 +80,18 @@ class LowLatencyRenderersFactory(
             if (filtered.isNotEmpty()) filtered else defaults
         }
 
+        // Media3 1.5 deprecated every positional MediaCodecVideoRenderer
+        // constructor in favour of Builder; the protected Builder-taking
+        // constructor is the supported path for a subclass like this one.
         out.add(
             object : MediaCodecVideoRenderer(
-                context,
-                avcSafeSelector,
-                allowedVideoJoiningTimeMs,
-                enableDecoderFallback,
-                eventHandler,
-                eventListener,
-                /* maxDroppedFramesToNotify = */ 50
+                Builder(context)
+                    .setMediaCodecSelector(avcSafeSelector)
+                    .setAllowedJoiningTimeMs(allowedVideoJoiningTimeMs)
+                    .setEnableDecoderFallback(enableDecoderFallback)
+                    .setEventHandler(eventHandler)
+                    .setEventListener(eventListener)
+                    .setMaxDroppedFramesToNotify(50)
             ) {
                 override fun getMediaFormat(
                     format: Format,

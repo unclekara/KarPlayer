@@ -9,8 +9,8 @@ open-source video transport protocol created and open-sourced by
 [Haivision](https://www.haivision.com/).
 
 - **libsrt 1.5.4** with AES encryption (via mbedtls 3.6.2), built from source per ABI
-- **Media3 / ExoPlayer 1.3.1** with MPEG-TS extractor and hardware H.264 / H.265 decode
-- **Kotlin 2.0 + Jetpack Compose** UI; minSdk 26, target 34
+- **Media3 / ExoPlayer 1.11.1** with MPEG-TS extractor and hardware H.264 / H.265 decode
+- **Kotlin 2.2 + Jetpack Compose** UI; minSdk 26, compile 36, target 34
 - **ABIs**: `arm64-v8a`, `armeabi-v7a`, `x86_64`
 - **16 KB page-size aligned** (Android 15+ requirement)
 
@@ -22,7 +22,7 @@ operator kicks). Encryption (PBKEYLEN 128/192/256), receiver-side TSBPD
 latency, bandwidth cap, and stream-ID are all wired through. Runs on
 phones, tablets and Android TV / leanback launchers.
 
-Current version: **0.5** — see [CHANGELOG.md](CHANGELOG.md). For module
+Current version: **0.6** — see [CHANGELOG.md](CHANGELOG.md). For module
 layout and data flows see [ARCHITECTURE.md](ARCHITECTURE.md); for
 on-the-wire and inter-module contracts see [API.md](API.md).
 
@@ -108,7 +108,7 @@ KarPlayer/
 
 - **JDK 17** (OpenJDK / Temurin)
 - **Android SDK** with:
-  - `platforms;android-34`
+  - `platforms;android-36`
   - `build-tools;34.0.0`
   - `ndk;27.3.13750724` (NDK r27 or newer — required for 16 KB-aligned `libc++_shared.so`)
   - `cmake;3.22.1`

@@ -17,15 +17,15 @@ val keystoreProps: Properties? = if (keystorePropsFile.exists()) {
 
 android {
     namespace = "com.karplayer"
-    compileSdk = 34
+    compileSdk = 36
     ndkVersion = "27.3.13750724"
 
     defaultConfig {
         applicationId = "com.karplayer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.5"
+        versionCode = 7
+        versionName = "0.6"
         // armeabi-v7a included for legacy / low-cost TV boxes (Amlogic, RK).
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }

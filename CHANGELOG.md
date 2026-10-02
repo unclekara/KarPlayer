@@ -4,6 +4,83 @@ All notable changes to KarPlayer are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/); the project
 uses simple `MAJOR.MINOR` tags.
 
+## [0.6] — 2026-10-03
+
+### Changed
+
+- **Media3 / ExoPlayer 1.3.1 → 1.11.1.** The old pin was eighteen
+  months behind. What this buys the live MPEG-TS path:
+  - **Codec no longer swallows all samples** when it was flushed
+    before receiving input buffers (1.11.0). Our reconnect loop is a
+    stream of `stop()` → `prepare()`, i.e. codec flushes, and in kiosk
+    mode it runs unattended and unbounded — this is the single most
+    relevant fix in the range.
+  - Rendering decision on a new surface fixed so frames aren't dropped
+    on devices without placeholder-surface support (1.11.0). We swap
+    the surface on `SurfaceView` create/destroy and on PiP transitions.
+  - `MediaCodecAudioRenderer` takes the channel mask from the platform
+    decoder instead of inferring it from the channel count (1.11.0) —
+    more accurate channel readout for multi-track / multi-channel
+    sources.
+  - MPEG-TS: last frame of a stream reaches the sample queue (1.4.0);
+    `IllegalArgumentException` out of `ReorderingBufferQueue` on PES
+    packets with no timestamp is fixed (1.9.0) — live encoders emit
+    those; last frame also rendered when the final PES has a known
+    length (1.11.0).
+  - Codec reuse on frame-rate changes below API 30 no longer resets
+    the codec where that isn't beneficial (1.10.1) — old TV boxes.
+  - Note 1.6.x and 1.7.x are skipped deliberately: a regression
+    introduced in 1.6 breaks H.265 SEI parsing
+    ([androidx/media#2456](https://github.com/androidx/media/issues/2456)),
+    fixed in 1.8.0. We feed HEVC carrying our own `KarSEI-TSYNC` marks.
+- **Kotlin 2.0.21 → 2.2.21**, required by Media3 ≥ 1.10 (its
+  `kotlin-stdlib` metadata is rejected by a 2.0 compiler). The Compose
+  compiler plugin follows the Kotlin version automatically. AGP 8.4.2
+  and Gradle 8.7 are unchanged.
+- **compileSdk 35 → 36**, required by Media3 ≥ 1.10. `targetSdk` stays
+  at **34** on purpose — raising it opts into forced edge-to-edge on
+  Android 15, which would fight the immersive fullscreen player. That
+  is a separate change with its own UI verification.
+- **`LowLatencyRenderersFactory` now builds its renderer through
+  `MediaCodecVideoRenderer.Builder`.** Media3 1.5 deprecated every
+  positional constructor; the protected Builder-taking constructor is
+  the supported path for a subclass. Behaviour is unchanged — the
+  `KEY_LOW_LATENCY` opt-in and the `c2.exynos.avc.decoder` carve-out
+  for Pixel 8/9 are untouched. Upstream still ships no workaround of
+  its own for that decoder, so the carve-out stays.
+
+### Watch out for
+
+- **Track support got stricter in 1.11.0:** tracks with a well-formed
+  but *unrecognized* codec profile or level are now reported as
+  `supported=NO_EXCEEDS_CAPABILITIES` instead of `supported=YES`. Live
+  encoders are not always tidy about profile/level signalling, so a
+  source that played on 1.3.1 could in principle be refused. Did *not*
+  trigger against vMix (HEVC 1080p + AAC-LATM) on a Pixel 8 — but that
+  is one encoder, and other sources still want a check.
+- **`MediaCodecAudioRenderer: Audio sink error` is logged once on every
+  reconnect** (observed on a Pixel 8, HEVC, hardware decode). Audio
+  recovers on its own — the platform `AudioTrack` comes back
+  `state:started` and playback continues with no further errors — so
+  this is noise rather than breakage. Not established whether 1.3.1
+  behaved the same; worth an A/B if it ever turns into audible
+  drop-out.
+- `android.suppressUnsupportedCompileSdk=36` is set in
+  `gradle.properties`: compileSdk 36 is newer than AGP 8.4.2 officially
+  knows about. Builds are clean and the APK is correct; drop the flag
+  once AGP is bumped.
+- Compose BOM is deliberately **not** bumped here. It compiles fine
+  against the Kotlin 2.2 compiler, and keeping Material3 behaviour
+  frozen means a hardware test of this change exercises playback only,
+  not UI regressions. Separate change.
+- Changing `compileSdk` or the Kotlin version leaves stale incremental
+  state behind. If a build fails with `NullPointerException` in
+  `mergeReleaseResources`, or with "Module was compiled with an
+  incompatible version of Kotlin … expected version is 2.0.0", stop the
+  daemons and delete `*/build/tmp` plus
+  `app/build/intermediates/{merged_res,incremental}`. Neither is a real
+  incompatibility — a clean build passes.
+
 ## [0.5] — 2026-10-02
 
 ### Added
