@@ -27,7 +27,13 @@ android {
         versionCode = 7
         versionName = "0.6"
         // armeabi-v7a included for legacy / low-cost TV boxes (Amlogic, RK).
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        // -PabiFilter=arm64-v8a builds one architecture, which is the
+        // difference between a two-minute experiment and a ten-minute
+        // one when libsrt is compiled from source for each.
+        ndk {
+            val only = project.findProperty("abiFilter") as String?
+            abiFilters += if (only != null) listOf(only) else listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     signingConfigs {
