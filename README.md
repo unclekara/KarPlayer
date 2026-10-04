@@ -10,7 +10,11 @@ open-source video transport protocol created and open-sourced by
 Systems Inc. KarPlayer is not affiliated with, endorsed by, or sponsored
 by Haivision or the SRT Alliance.
 
-- **libsrt 1.5.4** with AES encryption (via mbedtls 3.6.2), built from source per ABI
+- **libsrt 1.5.7** with AES encryption (via mbedtls 3.6.2), built from source
+  per ABI, with [one line patched](srt/src/main/cpp/CMakeLists.txt) so that
+  control packets with no payload are accepted — which the SRT specification
+  allows and 1.5.7 began refusing, costing the receiver its RTT measurement
+  and clock-drift correction. See [NOTICE](NOTICE)
 - **Media3 / ExoPlayer 1.11.1** with MPEG-TS extractor and hardware H.264 / H.265 decode
 - **Kotlin 2.2 + Jetpack Compose** UI; minSdk 26, compile 36, target 34
 - **ABIs**: `arm64-v8a`, `armeabi-v7a`, `x86_64`

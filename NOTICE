@@ -8,12 +8,32 @@ This product includes software developed at Haivision (https://github.com/Haivis
   https://www.mozilla.org/en-US/MPL/2.0/
 
   libsrt is fetched from source at build time and linked dynamically. The
-  unmodified source is available at https://github.com/Haivision/srt at the
-  tag pinned in srt/src/main/cpp/CMakeLists.txt (currently v1.5.4). Per the
-  MPL-2.0, any modifications to libsrt source files (we make none) would
-  have to be released under the same license; the linking exception in
-  MPL-2.0 §3.3 permits combining libsrt as a library with the Apache-2.0
-  licensed code in this repository.
+  source is available at https://github.com/Haivision/srt at the tag pinned
+  in srt/src/main/cpp/CMakeLists.txt (currently v1.5.7).
+
+  WE MODIFY IT. One line of srtcore/core.cpp is changed at build time, and
+  the change is reproduced in full in that same CMakeLists.txt as the
+  PATCH_COMMAND of the libsrt ExternalProject, which is the Modified
+  Source Code this notice is obliged to point at. In the check that
+  libsrt 1.5.7 added at the top of CUDT::processCtrl,
+
+      if (!pktlen || pktlen % sizeof(int32_t) != 0)
+
+  becomes
+
+      if (pktlen % sizeof(int32_t) != 0)
+
+  so that a control packet with no payload is accepted, as it was in
+  1.5.6 and earlier. An ACKACK has no Control Information Field by
+  specification (draft-sharabayko-srt-01 section 3.2.8), and senders that
+  send it that way were otherwise losing the receiver's RTT estimate, its
+  NAK pacing and its clock-drift correction. Build with
+  -PacceptEmptyAckAck=false for stock libsrt.
+
+  That modification is released under the MPL-2.0, the same licence as the
+  file it changes. The linking exception in MPL-2.0 section 3.3 permits
+  combining libsrt as a library with the Apache-2.0 licensed code in this
+  repository.
 
 This product includes software developed at Mbed TLS Contributors:
   Mbed TLS (https://github.com/Mbed-TLS/mbedtls)

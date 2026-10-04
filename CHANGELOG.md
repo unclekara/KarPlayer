@@ -8,9 +8,17 @@ uses simple `MAJOR.MINOR` tags.
 
 ### Added
 
+### Changed
+
+- **libsrt moves from 1.5.4 to 1.5.7, with one line patched.** The
+  patch is on by default and the modification is disclosed in
+  [NOTICE](NOTICE) as MPL-2.0 requires — see below for why it is
+  needed at all.
+
+### Added
+
 - **`-PsrtVersion`, `-PabiFilter` and `-PacceptEmptyAckAck`** build
-  flags, for trying a different libsrt without editing files. The pin
-  stays at **v1.5.4**.
+  flags. `-PacceptEmptyAckAck=false` builds against stock libsrt.
 
   The reason they exist: libsrt 1.5.7 added a check at the top of
   `CUDT::processCtrl` that refuses a control packet with an empty
@@ -20,6 +28,14 @@ uses simple `MAJOR.MINOR` tags.
   `processCtrlAckAck` and loses the RTT estimate, the NAK interval
   derived from it, the TSBPD drift samples and light ACKs — the drift
   samples being the ones this player's frame-accurate sync leans on.
+
+  The packet is not malformed: draft-sharabayko-srt-01 §3.2.8 says
+  plainly that "ACKACK control packets do not contain Control
+  Information Field (CIF)". libsrt pads its own for a reason it states
+  in a comment beside the code — `writev` will not take a zero-length
+  buffer — and in 1.5.7 it began requiring the same of everyone else.
+  So the one line this build changes works around a regression
+  upstream rather than tolerating a broken peer.
 
   Measured here, same device, same network, same stream:
 

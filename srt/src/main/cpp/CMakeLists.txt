@@ -24,7 +24,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # ----------------------------------------------------------------------------
 
 option(KARPLAYER_BUILD_LIBSRT_FROM_SOURCE "Build libsrt from source via ExternalProject_Add" ON)
-set(SRT_VERSION "v1.5.4" CACHE STRING "Tag/branch of Haivision/srt to build")
+set(SRT_VERSION "v1.5.7" CACHE STRING "Tag/branch of Haivision/srt to build")
 
 # KARPLAYER_ACCEPT_EMPTY_ACKACK relaxes one check libsrt added in 1.5.7.
 #
@@ -41,16 +41,27 @@ set(SRT_VERSION "v1.5.4" CACHE STRING "Tag/branch of Haivision/srt to build")
 # 100 ms against a sender that does not pad, 4 ms against one that
 # does.
 #
-# The right fix is on the sender (see datarhei/gosrt#161, and KarRelay
-# 0.6 ships it). This option is for the senders you do not control. It
-# drops only the zero-length half of the condition, leaving the
-# alignment check, which is how 1.5.6 and earlier behaved.
+# The packet is not malformed. draft-sharabayko-srt-01 section 3.2.8
+# says in as many words: "ACKACK control packets do not contain Control
+# Information Field (CIF)." KEEPALIVE and SHUTDOWN are specified the
+# same way. libsrt pads them anyway for a reason it states beside its
+# own code -- "control info field should be none but 'writev' does not
+# allow this" -- and in 1.5.7 it began requiring everyone else to do
+# the same. So this is a workaround for a regression upstream, not a
+# tolerance for broken peers.
 #
-# OFF by default: it edits a dependency, and a receiver that quietly
-# tolerates malformed control packets is a worse default than one that
-# complains.
+# ON by default, which is a decision rather than a convenience: a
+# player that must work with whatever sender it is pointed at cannot
+# afford to lose RTT and drift correction because that sender follows
+# the specification. KarRelay 0.6 pads (datarhei/gosrt#161 proposes the
+# same for gosrt generally), but MediaMTX and any other gosrt-based
+# sender do not.
+#
+# It drops only the zero-length half of the condition and leaves the
+# alignment check, which is how 1.5.6 and earlier behaved. Turn it off
+# with -PacceptEmptyAckAck=false to get stock libsrt.
 option(KARPLAYER_ACCEPT_EMPTY_ACKACK
-       "Patch libsrt to accept zero-length control payloads (see above)" OFF)
+       "Patch libsrt to accept zero-length control payloads (see above)" ON)
 
 set(LIBSRT_PREBUILT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/include/srt/srt.h")
 set(LIBSRT_PREBUILT_SO "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libsrt.so")

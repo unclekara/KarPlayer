@@ -36,12 +36,14 @@ android {
                     // and with it the receiver's RTT, its NAK pacing and
                     // its TSBPD drift correction. Senders built on gosrt
                     // send exactly that ACKACK.
-                    "-DSRT_VERSION=" + ((project.findProperty("srtVersion") as String?) ?: "v1.5.4"),
+                    "-DSRT_VERSION=" + ((project.findProperty("srtVersion") as String?) ?: "v1.5.7"),
                     // -PacceptEmptyAckAck=true patches libsrt to tolerate
                     // the ACKACK gosrt sends. For senders we do not
                     // control; see the comment in CMakeLists.txt.
+                    // On by default; -PacceptEmptyAckAck=false builds
+                    // against stock libsrt. See CMakeLists.txt.
                     "-DKARPLAYER_ACCEPT_EMPTY_ACKACK=" +
-                        (if (project.findProperty("acceptEmptyAckAck") == "true") "ON" else "OFF")
+                        (if (project.findProperty("acceptEmptyAckAck") == "false") "OFF" else "ON")
                 )
             }
         }
