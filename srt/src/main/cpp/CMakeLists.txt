@@ -26,6 +26,32 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 option(KARPLAYER_BUILD_LIBSRT_FROM_SOURCE "Build libsrt from source via ExternalProject_Add" ON)
 set(SRT_VERSION "v1.5.4" CACHE STRING "Tag/branch of Haivision/srt to build")
 
+# KARPLAYER_ACCEPT_EMPTY_ACKACK relaxes one check libsrt added in 1.5.7.
+#
+# At the top of CUDT::processCtrl, 1.5.7 refuses any control packet whose
+# payload length is zero and returns *before* the dispatch:
+#
+#     if (!pktlen || pktlen % sizeof(int32_t) != 0) { ...; return false; }
+#
+# An ACKACK carries nothing but a sequence number in its header, and
+# senders built on gosrt send it with no payload at all. On 1.5.7 the
+# receiver therefore never runs processCtrlAckAck, and loses the RTT
+# estimate, the NAK interval derived from it, the TSBPD drift samples
+# and light ACKs. Measured on this player: RTT pinned at its initial
+# 100 ms against a sender that does not pad, 4 ms against one that
+# does.
+#
+# The right fix is on the sender (see datarhei/gosrt#161, and KarRelay
+# 0.6 ships it). This option is for the senders you do not control. It
+# drops only the zero-length half of the condition, leaving the
+# alignment check, which is how 1.5.6 and earlier behaved.
+#
+# OFF by default: it edits a dependency, and a receiver that quietly
+# tolerates malformed control packets is a worse default than one that
+# complains.
+option(KARPLAYER_ACCEPT_EMPTY_ACKACK
+       "Patch libsrt to accept zero-length control payloads (see above)" OFF)
+
 set(LIBSRT_PREBUILT_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/include/srt/srt.h")
 set(LIBSRT_PREBUILT_SO "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libsrt.so")
 
@@ -103,12 +129,26 @@ elseif(KARPLAYER_LIBSRT_MODE STREQUAL "FROM_SOURCE")
     )
 
     # ---- libsrt with encryption ON ----
+    # Empty unless asked for, so the normal build fetches and compiles
+    # libsrt untouched.
+    set(SRT_PATCH_COMMAND "")
+    if(KARPLAYER_ACCEPT_EMPTY_ACKACK)
+        # One substitution, on one line, keeping the alignment check.
+        # sed over patch(1): no context to go stale when the pin moves,
+        # and it fails loudly if the line is not there any more.
+        set(SRT_PATCH_COMMAND
+            sed -i "s/if (!pktlen || pktlen % sizeof(int32_t) != 0)/if (pktlen % sizeof(int32_t) != 0) \\/* KARPLAYER: zero-length control payloads accepted *\\//"
+            <SOURCE_DIR>/srtcore/core.cpp)
+        message(STATUS "KarPlayer: libsrt will be patched to accept empty ACKACK")
+    endif()
+
     ExternalProject_Add(srt_external
         DEPENDS        mbedtls_external
         GIT_REPOSITORY https://github.com/Haivision/srt.git
         GIT_TAG        ${SRT_VERSION}
         GIT_SHALLOW    TRUE
         UPDATE_DISCONNECTED TRUE
+        PATCH_COMMAND  ${SRT_PATCH_COMMAND}
         PREFIX         "${SRT_PREFIX}"
         INSTALL_DIR    "${SRT_INSTALL}"
         CMAKE_ARGS

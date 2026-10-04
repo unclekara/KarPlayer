@@ -4,6 +4,36 @@ All notable changes to KarPlayer are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/); the project
 uses simple `MAJOR.MINOR` tags.
 
+## [Unreleased]
+
+### Added
+
+- **`-PsrtVersion`, `-PabiFilter` and `-PacceptEmptyAckAck`** build
+  flags, for trying a different libsrt without editing files. The pin
+  stays at **v1.5.4**.
+
+  The reason they exist: libsrt 1.5.7 added a check at the top of
+  `CUDT::processCtrl` that refuses a control packet with an empty
+  payload and returns *before* the dispatch. An ACKACK carries nothing
+  but a sequence number in its header, and senders built on gosrt send
+  it with no payload, so on 1.5.7 the receiver never runs
+  `processCtrlAckAck` and loses the RTT estimate, the NAK interval
+  derived from it, the TSBPD drift samples and light ACKs — the drift
+  samples being the ones this player's frame-accurate sync leans on.
+
+  Measured here, same device, same network, same stream:
+
+  | sender | receiver | RTT |
+  |---|---|---|
+  | gosrt as released | libsrt 1.5.7 stock | 100 ms, constant |
+  | gosrt + padding ([datarhei/gosrt#161](https://github.com/datarhei/gosrt/pull/161)) | libsrt 1.5.7 stock | 4 ms |
+  | gosrt as released | libsrt 1.5.7 + `-PacceptEmptyAckAck` | 4 ms |
+
+  Either end fixes it, and 4 ms is what this player reports on 1.5.4
+  against the same sender. The sender side is the right fix and
+  KarRelay 0.6 ships it; the receiver-side flag is for senders you do
+  not control.
+
 ## [0.6] — 2026-10-03
 
 ### Changed
