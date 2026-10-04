@@ -32,3 +32,25 @@ This product uses AndroidX Media3 (ExoPlayer):
 This product uses Jetpack Compose and other AndroidX libraries:
   Copyright (c) The Android Open Source Project
   Licensed under the Apache License, Version 2.0
+
+
+Trademarks
+----------
+
+SRT is a trademark of Haivision Systems Inc. KarPlayer is not affiliated
+with, endorsed by, or sponsored by Haivision or the SRT Alliance. The
+notice above records that this product includes their software under the
+MPL-2.0; it does not imply any endorsement of this product by them.
+
+Android, Jetpack and ExoPlayer are trademarks of Google LLC. KarPlayer
+is not affiliated with or endorsed by Google.
+
+All other trademarks are the property of their respective owners.
+
+
+Contact
+-------
+
+Alexander Karabatov
+hellokarabatov@gmail.com
+https://github.com/unclekara

@@ -6,7 +6,9 @@ moving parts, end-to-end target **< 200 ms on LAN**.
 
 [SRT](https://github.com/Haivision/srt) (Secure Reliable Transport) is an
 open-source video transport protocol created and open-sourced by
-[Haivision](https://www.haivision.com/).
+[Haivision](https://www.haivision.com/). SRT is a trademark of Haivision
+Systems Inc. KarPlayer is not affiliated with, endorsed by, or sponsored
+by Haivision or the SRT Alliance.
 
 - **libsrt 1.5.4** with AES encryption (via mbedtls 3.6.2), built from source per ABI
 - **Media3 / ExoPlayer 1.11.1** with MPEG-TS extractor and hardware H.264 / H.265 decode
@@ -244,4 +246,4 @@ verification on real hardware are mine.
 
 ## Author
 
-Alexander Karabatov
+Alexander Karabatov · <hellokarabatov@gmail.com>
