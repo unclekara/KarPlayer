@@ -254,7 +254,7 @@ uses simple `MAJOR.MINOR` tags.
   parsing, no licensing client. Pro features are enforced entirely
   inside KarRelay; the player only reflects rejection reasons it
   receives over SRT and the HTTP side-channel. See
-  [../KarRelay/LICENSING.md](../KarRelay/LICENSING.md) for the rationale.
+  [KarRelay](https://github.com/unclekara/KarRelay) for which features the relay enforces.
 
 ## [0.2.1] — 2026-05
 

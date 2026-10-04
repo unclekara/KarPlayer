@@ -17,7 +17,7 @@ open-source video transport protocol created and open-sourced by
 ## Status
 
 Verified end-to-end against vMix (HEVC + AAC) and against the companion
-**[KarRelay](../KarRelay)** (SEI timecode sync, rejection reasons,
+**[KarRelay](https://github.com/unclekara/KarRelay)** (SEI timecode sync, rejection reasons,
 operator kicks). Encryption (PBKEYLEN 128/192/256), receiver-side TSBPD
 latency, bandwidth cap, and stream-ID are all wired through. Runs on
 phones, tablets and Android TV / leanback launchers.

@@ -71,15 +71,14 @@ Originally planned: a second SEI carrying an Ed25519 token that the
 player would verify natively and use to suppress a bouncing watermark.
 Removed — KarPlayer no longer participates in licensing. The relay
 enforces Pro features on the locally-cached envelope; the player just
-reflects what arrives. See
-[../KarRelay/LICENSING.md](../KarRelay/LICENSING.md).
+reflects what arrives. Which features those are is listed on
+[KarRelay](https://github.com/unclekara/KarRelay).
 
 ### 1.5 Relay clock-sync HTTP
 
 [RelayClockSync.kt](player/src/main/kotlin/com/karplayer/player/RelayClockSync.kt)
 hits `http://<host>:<webPort>/api/time` (default port 8080)
-exactly as KarRelay implements it
-([KarRelay API.md → /api/time](../KarRelay/API.md)).
+exactly as [KarRelay](https://github.com/unclekara/KarRelay) implements it.
 
 * 5 NTP-style samples, picks the one with the lowest round-trip.
 * Returns `phoneMid − relayUnixMs` as the offset.
@@ -420,8 +419,7 @@ entirely inside KarRelay; KarPlayer simply renders what the relay
 sends and reflects rejection reasons coming over SRT / the HTTP
 side-channel (section 7 below).
 
-See [../KarRelay/LICENSING.md](../KarRelay/LICENSING.md) and
-[../KarLicense/PLAN.md](../KarLicense/PLAN.md).
+See [KarRelay](https://github.com/unclekara/KarRelay) for what the relay enforces.
 
 ---
 
