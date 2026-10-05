@@ -24,8 +24,8 @@ android {
         applicationId = "com.karplayer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "0.6"
+        versionCode = 8
+        versionName = "0.7"
         // armeabi-v7a included for legacy / low-cost TV boxes (Amlogic, RK).
         // -PabiFilter=arm64-v8a builds one architecture, which is the
         // difference between a two-minute experiment and a ten-minute

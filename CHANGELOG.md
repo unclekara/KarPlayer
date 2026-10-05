@@ -6,7 +6,9 @@ uses simple `MAJOR.MINOR` tags.
 
 ## [Unreleased]
 
-### Added
+Nothing yet.
+
+## [0.7] — 2026-10-05
 
 ### Changed
 

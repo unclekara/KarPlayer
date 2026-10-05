@@ -28,7 +28,7 @@ operator kicks). Encryption (PBKEYLEN 128/192/256), receiver-side TSBPD
 latency, bandwidth cap, and stream-ID are all wired through. Runs on
 phones, tablets and Android TV / leanback launchers.
 
-Current version: **0.6** — see [CHANGELOG.md](CHANGELOG.md). For module
+Current version: **0.7** — see [CHANGELOG.md](CHANGELOG.md). For module
 layout and data flows see [ARCHITECTURE.md](ARCHITECTURE.md); for
 on-the-wire and inter-module contracts see [API.md](API.md).
 
